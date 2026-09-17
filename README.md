@@ -69,6 +69,12 @@ The "BTP Repeater" suite tab makes that loop quick:
 3. Click **"Serialize & Send"**. BTP re-serializes the edited JSON to BlazorPack and sends it back through the live
    connection.
 
+A message sent this way does **not** appear in Burp's WebSockets history - Burp does not record messages an extension
+injects, the same way it does not record `http().sendRequest()` traffic. The Repeater therefore keeps its own **Sent**
+record below the editor (with a timestamp, direction, connection and byte count for each send), and logs a hex preview
+to the extension's Output tab. A server *response* to the injected message does travel back through the proxy, so that
+part shows in the history as usual.
+
 Notes:
 * The **Connection** dropdown lists the Blazor WebSockets currently open through the proxy; **Refresh** re-reads it.
   A connection that has closed drops off the list, and sending on one that closes is reported rather than silently lost.

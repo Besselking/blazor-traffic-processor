@@ -18,6 +18,7 @@ package com.gdssecurity.views;
 import burp.api.montoya.MontoyaApi;
 import burp.api.montoya.core.ByteArray;
 import burp.api.montoya.logging.Logging;
+import burp.api.montoya.ui.editor.EditorOptions;
 import burp.api.montoya.ui.editor.RawEditor;
 import burp.api.montoya.websocket.Direction;
 import com.gdssecurity.helpers.BTPConstants;
@@ -32,8 +33,12 @@ import javax.swing.JComboBox;
 import javax.swing.JComponent;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
+import javax.swing.JSplitPane;
 import java.awt.BorderLayout;
 import java.awt.FlowLayout;
+import java.nio.charset.StandardCharsets;
+import java.time.LocalTime;
+import java.time.format.DateTimeFormatter;
 
 /**
  * Class to handle the "BTP Repeater" tab, for capturing a client-to-server BlazorPack invocation, editing its
@@ -55,6 +60,8 @@ public class BTPRepeaterView extends JComponent {
             BTPConstants.DIRECTION_TO_SERVER, BTPConstants.DIRECTION_TO_CLIENT});
     private final JLabel statusLabel = new JLabel(" ");
     private final RawEditor editor;
+    // A running record of what was sent, since injected messages do not appear in Burp's WebSockets history
+    private final RawEditor sentLog;
 
     /**
      * Constructs the repeater view
@@ -67,6 +74,7 @@ public class BTPRepeaterView extends JComponent {
         this.registry = registry;
         this.blazorHelper = new BlazorHelper(montoyaApi);
         this.editor = montoyaApi.userInterface().createRawEditor();
+        this.sentLog = montoyaApi.userInterface().createRawEditor(EditorOptions.READ_ONLY);
 
         setLayout(new BorderLayout(10, 10));
 
@@ -91,7 +99,20 @@ public class BTPRepeaterView extends JComponent {
         top.add(this.statusLabel, BorderLayout.SOUTH);
 
         add(top, BorderLayout.NORTH);
-        add(this.editor.uiComponent(), BorderLayout.CENTER);
+
+        // Editable invocation on top, an append-only record of what was sent below - the sent record stands in for
+        // the WebSockets history, which does not list messages an extension injects
+        JPanel editorPanel = new JPanel(new BorderLayout());
+        editorPanel.add(new JLabel("Invocation (edit, then Serialize & Send):"), BorderLayout.NORTH);
+        editorPanel.add(this.editor.uiComponent(), BorderLayout.CENTER);
+
+        JPanel logPanel = new JPanel(new BorderLayout());
+        logPanel.add(new JLabel("Sent (not shown in Burp's WebSockets history):"), BorderLayout.NORTH);
+        logPanel.add(this.sentLog.uiComponent(), BorderLayout.CENTER);
+
+        JSplitPane split = new JSplitPane(JSplitPane.VERTICAL_SPLIT, editorPanel, logPanel);
+        split.setResizeWeight(0.7);
+        add(split, BorderLayout.CENTER);
 
         refreshConnections();
     }
@@ -198,8 +219,46 @@ public class BTPRepeaterView extends JComponent {
         }
         String arrow = direction == Direction.CLIENT_TO_SERVER ? "to server" : "to client";
         setStatus("Sent " + packed.length + " bytes " + arrow + " on connection #" + entry.id() + ".");
+        recordSent(entry, arrow, packed, content.toString());
+    }
+
+    /**
+     * Appends a sent message to the record pane and the extension output, since Burp does not list injected messages
+     * @param entry - the connection it was sent on
+     * @param arrow - a human-readable direction ("to server" / "to client")
+     * @param packed - the BlazorPack bytes that were sent
+     * @param json - the JSON that produced them
+     */
+    private void recordSent(BTPWebSocketRegistry.Entry entry, String arrow, byte[] packed, String json) {
+        String stamp = LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm:ss"));
+        String header = "[" + stamp + "] " + arrow + " on #" + entry.id() + "  (" + packed.length + " bytes)";
+        StringBuilder sb = new StringBuilder();
+        byte[] existing = this.sentLog.getContents() == null ? new byte[0] : this.sentLog.getContents().getBytes();
+        if (existing.length != 0) {
+            sb.append(new String(existing, StandardCharsets.UTF_8)).append("\n\n");
+        }
+        sb.append(header).append("\n").append(json.trim());
+        this.sentLog.setContents(ByteArray.byteArray(sb.toString()));
+
         this._logging.logToOutput("[+] BTPRepeaterView - Sent " + packed.length + " bytes " + arrow
-                + " on connection #" + entry.id() + " (" + entry.url() + ")");
+                + " on connection #" + entry.id() + " (" + entry.url() + "); hex " + hexPreview(packed));
+    }
+
+    /**
+     * Renders the first few bytes of a payload as hex, for the output log
+     * @param bytes - the payload
+     * @return a hex string, truncated with an ellipsis if long
+     */
+    private static String hexPreview(byte[] bytes) {
+        int shown = Math.min(24, bytes.length);
+        StringBuilder hex = new StringBuilder();
+        for (int i = 0; i < shown; i++) {
+            hex.append(String.format(BTPConstants.HEX_FORMAT, bytes[i]));
+        }
+        if (bytes.length > shown) {
+            hex.append("...");
+        }
+        return hex.toString();
     }
 
     /**
