@@ -140,9 +140,12 @@ Worth knowing:
   many bytes are still buffered awaiting the rest - which is what to look at if stitching is not behaving.
 * **Reassembly happens as traffic passes through the proxy.** Messages proxied before the extension was loaded were
   never streamed through it, so they cannot be reassembled after the fact.
-* A stream that loses alignment is detected (every BlazorPack message is a MessagePack array, so a body that does not
-  start with an array header means the stream is no longer aligned) and reset, rather than emitting nonsense or
-  buffering indefinitely.
+* A stream that loses alignment is detected and reset, rather than emitting nonsense or buffering indefinitely.
+  Two checks catch it: every BlazorPack message is a MessagePack array, so a body that does not start with an array
+  header means the stream is out of step; and a WebSocket cannot interleave the data frames of two messages, so a
+  payload that is itself a complete message proves that anything still buffered was never the start of one. Without
+  the second check a single bad length prefix swallows every message after it, permanently. Both log a line saying
+  what was discarded.
 
 ## Downgrade Explained (WS -> HTTP) (legacy)
 _This is no longer the default. BTP now handles BlazorPack over WebSockets natively; the downgrade is kept as an opt-in for workflows that rely on the HTTP tooling (Repeater, Intruder, and the request/response editors)._

@@ -123,6 +123,12 @@ public class BTPProxyMessageHandler implements ProxyMessageHandler {
                     : this.serverToClient;
 
             List<BlazorReassembler.AssembledMessage> assembled = reassembler.accept(payload);
+            String desyncNotice = reassembler.consumeDesyncNotice();
+            if (desyncNotice != null) {
+                this._logging.logToOutput("[*] process - websocket "
+                        + (message.direction() == Direction.CLIENT_TO_SERVER ? "to server" : "to client")
+                        + ": " + desyncNotice);
+            }
             int deserialized = 0;
             for (BlazorReassembler.AssembledMessage completed : assembled) {
                 String json = this.blazorHelper.blazorUnpackToJsonString(completed.message());

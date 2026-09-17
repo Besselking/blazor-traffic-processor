@@ -45,11 +45,15 @@ public class BlazorReassembler {
     private static final int OPENING_BRACE = 0x7B;
     // No handshake record is anywhere near this long, so past it we are looking at something else
     private static final int MAX_HANDSHAKE_BYTES = 4096;
+    // A message that has not completed after this many payloads is never going to
+    private static final int MAX_PAYLOADS_PER_MESSAGE = 256;
 
     private byte[] buffer = new byte[0];
     private final List<byte[]> pendingFragments = new ArrayList<>();
     // The handshake is only ever the first record of a direction
     private boolean expectHandshake = true;
+    private int payloadsWhilePending;
+    private String desyncNotice;
 
     /**
      * Holds one fully reassembled BlazorPack message along with the WebSocket payloads it was built from
@@ -99,6 +103,21 @@ public class BlazorReassembler {
             // The stream is not what we think it is; drop it rather than buffering indefinitely
             reset();
             return completed;
+        }
+
+        if (this.buffer.length > 0) {
+            // A websocket cannot interleave the data frames of two messages, so a payload that is itself a
+            // complete BlazorPack message proves that what we are still holding was never the start of one.
+            // Without this check a single bad length prefix swallows every message that follows it, for good.
+            if (looksLikeCompleteMessages(payload)) {
+                this.desyncNotice = "discarded " + this.buffer.length
+                        + " buffered byte(s) that never formed a message; resynchronised on a later one";
+                reset();
+            } else if (++this.payloadsWhilePending > MAX_PAYLOADS_PER_MESSAGE) {
+                this.desyncNotice = "discarded " + this.buffer.length + " buffered byte(s) after "
+                        + MAX_PAYLOADS_PER_MESSAGE + " websocket messages without completing one";
+                reset();
+            }
         }
 
         this.buffer = concat(this.buffer, payload);
@@ -160,6 +179,7 @@ public class BlazorReassembler {
             if (remainder.length == 0) {
                 this.pendingFragments.clear();
             }
+            this.payloadsWhilePending = 0;
         }
         return completed;
     }
@@ -186,6 +206,53 @@ public class BlazorReassembler {
     public synchronized void reset() {
         this.buffer = new byte[0];
         this.pendingFragments.clear();
+        this.payloadsWhilePending = 0;
+    }
+
+    /**
+     * Returns and clears any note about the stream having been resynchronised, for the caller to log
+     * @return the note, or null if the stream has stayed in step
+     */
+    public synchronized String consumeDesyncNotice() {
+        String notice = this.desyncNotice;
+        this.desyncNotice = null;
+        return notice;
+    }
+
+    /**
+     * Checks whether a payload is, on its own, one or more whole BlazorPack messages and nothing else.
+     * A payload carrying the middle of a message effectively never satisfies this: it starts at an arbitrary
+     * byte, so its supposed length prefix has to land exactly on the end of the payload and every body has to
+     * open with a MessagePack array header.
+     * @param payload - the websocket payload to test
+     * @return true if the payload stands alone as whole messages
+     */
+    public static boolean looksLikeCompleteMessages(byte[] payload) {
+        if (payload == null || payload.length == 0) {
+            return false;
+        }
+        int offset = 0;
+        int messages = 0;
+        while (offset < payload.length) {
+            long prefix = readVarInt(payload, offset);
+            if (prefix == -1) {
+                return false;
+            }
+            int prefixLength = (int) (prefix >>> 32);
+            int messageLength = (int) prefix;
+            if (messageLength <= 0 || prefixLength > MAX_VARINT_BYTES) {
+                return false;
+            }
+            if (!isPlausibleBody(payload, offset + prefixLength)) {
+                return false;
+            }
+            offset += prefixLength + messageLength;
+            if (offset > payload.length) {
+                return false; // Runs past the end, so this is not a self-contained payload
+            }
+            messages++;
+        }
+        return messages > 0;
     }
 
     /**
