@@ -25,11 +25,13 @@ import com.gdssecurity.handlers.BTPWebSocketCreationHandler;
 import com.gdssecurity.helpers.BTPBuild;
 import com.gdssecurity.helpers.BTPConstants;
 import com.gdssecurity.helpers.BTPMessageCache;
+import com.gdssecurity.helpers.BTPWebSocketRegistry;
 import com.gdssecurity.helpers.BTPSettings;
 import com.gdssecurity.providers.BTPContextMenuItemsProvider;
 import com.gdssecurity.providers.BTPHttpRequestEditorProvider;
 import com.gdssecurity.providers.BTPHttpResponseEditorProvider;
 import com.gdssecurity.providers.BTPWebSocketMessageEditorProvider;
+import com.gdssecurity.views.BTPRepeaterView;
 import com.gdssecurity.views.BTPView;
 
 /**
@@ -41,6 +43,7 @@ public class BlazorTrafficProcessor implements BurpExtension, ExtensionUnloading
     private Logging logging;
     private BTPSettings settings;
     private BTPMessageCache messageCache;
+    private BTPWebSocketRegistry webSocketRegistry;
     private BTPWebSocketCreationHandler webSocketCreationHandler;
 
     /**
@@ -54,6 +57,7 @@ public class BlazorTrafficProcessor implements BurpExtension, ExtensionUnloading
         this.logging = this._montoya.logging();
         this.settings = new BTPSettings(this._montoya);
         this.messageCache = new BTPMessageCache();
+        this.webSocketRegistry = new BTPWebSocketRegistry();
 
         // Request/Response Editor Providers
         BTPHttpRequestEditorProvider requestEditorProvider = new BTPHttpRequestEditorProvider(this._montoya);
@@ -72,15 +76,19 @@ public class BlazorTrafficProcessor implements BurpExtension, ExtensionUnloading
         this._montoya.proxy().registerRequestHandler(highlightHandler);
 
         // WebSocket Creation Handler (attaches a BlazorPack-aware handler to each proxied Blazor websocket)
-        this.webSocketCreationHandler = new BTPWebSocketCreationHandler(this._montoya, this.messageCache, this.settings);
+        this.webSocketCreationHandler = new BTPWebSocketCreationHandler(this._montoya, this.messageCache, this.settings, this.webSocketRegistry);
         this._montoya.proxy().registerWebSocketCreationHandler(this.webSocketCreationHandler);
 
         // Setup the BTP tab in BurpSuite (main nav bar)
         BTPView burpTab = new BTPView(this._montoya, this.settings);
         this._montoya.userInterface().registerSuiteTab(BTPConstants.CAPTION, burpTab);
 
+        // Setup the BTP Repeater tab, for editing and resending captured invocations
+        BTPRepeaterView repeaterTab = new BTPRepeaterView(this._montoya, this.webSocketRegistry);
+        this._montoya.userInterface().registerSuiteTab(BTPConstants.REPEATER_CAPTION, repeaterTab);
+
         // Setup the right-click menu items
-        BTPContextMenuItemsProvider menuItemsProvider = new BTPContextMenuItemsProvider(this._montoya, burpTab);
+        BTPContextMenuItemsProvider menuItemsProvider = new BTPContextMenuItemsProvider(this._montoya, burpTab, repeaterTab, this.webSocketRegistry);
         this._montoya.userInterface().registerContextMenuItemsProvider(menuItemsProvider);
 
         this._montoya.extension().registerUnloadingHandler(this);

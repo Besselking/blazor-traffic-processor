@@ -27,6 +27,11 @@ public final class BTPConstants {
     public static final String EXTENSION_NAME = "BlazorTrafficProcessor";
     public static final String CAPTION = "BTP";
     public static final String SEND_TO_BTP_CAPTION = "Send body to BTP tab";
+    public static final String SEND_TO_REPEATER_CAPTION = "Send invocation to BTP Repeater (edit & resend)";
+    public static final String REPEATER_CAPTION = "BTP Repeater";
+    public static final String REPEATER_SEND_CAPTION = "Serialize & Send";
+    public static final String DIRECTION_TO_SERVER = "To server (client -> server)";
+    public static final String DIRECTION_TO_CLIENT = "To client (server -> client)";
     public static final String SEND_TO_INT_CAPTION = "Send to Intruder";
     public static final String VERBOSE_CHECKBOX_CAPTION = "Verbose WebSocket logging";
     public static final String VERBOSE_CHECKBOX_TOOLTIP =
