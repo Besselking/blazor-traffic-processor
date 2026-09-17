@@ -28,11 +28,16 @@ public final class BTPConstants {
     public static final String CAPTION = "BTP";
     public static final String SEND_TO_BTP_CAPTION = "Send body to BTP tab";
     public static final String SEND_TO_INT_CAPTION = "Send to Intruder";
+    public static final String VERBOSE_CHECKBOX_CAPTION = "Verbose WebSocket logging";
+    public static final String VERBOSE_CHECKBOX_TOOLTIP =
+            "Logs a line to the extension's Output tab for every proxied WebSocket message: direction, size, "
+            + "how many BlazorPack messages it completed, and how many bytes are still buffered awaiting the rest.";
+    public static final String PREF_VERBOSE_ENABLED = "btp.verboseWebSocketLogging";
     public static final String DOWNGRADE_CHECKBOX_CAPTION = "Force LongPolling downgrade (WebSockets -> HTTP)";
     public static final String DOWNGRADE_CHECKBOX_TOOLTIP =
             "Legacy mode. When checked, BTP rewrites the Blazor negotiate response so the browser falls back to " +
             "LongPolling over HTTP. Leave unchecked to work with the native WebSocket connection.";
-    public static final String LOADED_LOG_MSG = "[+] BTP v1.0 Extension loaded.";
+    public static final String LOADED_LOG_MSG = "[+] BTP v1.0 Extension loaded, build ";
     public static final String UNLOADED_LOG_MSG = "[*] BTP v1.0 Extension unloaded.";
 
     // Patterns and Regexes

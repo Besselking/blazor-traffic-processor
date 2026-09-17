@@ -127,6 +127,10 @@ Worth knowing:
 * **Reassembled views are read-only.** The decoded message spans several WebSocket messages, so there is no single one
   to write edits back to. BTP returns the original bytes untouched and ignores edits made in this view. Messages that
   arrive whole are unaffected and stay editable.
+* **Troubleshooting.** The extension logs the build it was made from on load (`[+] BTP v1.0 Extension loaded, build
+  <commit>`), so a bug report can name the exact jar. Ticking "Verbose WebSocket logging" in the BTP suite tab adds a
+  line per proxied WebSocket message giving its direction, size, how many BlazorPack messages it completed, and how
+  many bytes are still buffered awaiting the rest - which is what to look at if stitching is not behaving.
 * **Reassembly happens as traffic passes through the proxy.** Messages proxied before the extension was loaded were
   never streamed through it, so they cannot be reassembled after the fact.
 * A stream that loses alignment is detected (every BlazorPack message is a MessagePack array, so a body that does not

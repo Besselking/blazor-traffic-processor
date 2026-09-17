@@ -44,6 +44,23 @@ public class BTPSettings {
     }
 
     /**
+     * Whether every proxied WebSocket message should be logged to the extension's output
+     * @return true if verbose logging is enabled, false otherwise
+     */
+    public boolean isVerboseLoggingEnabled() {
+        Boolean stored = this.preferences.getBoolean(BTPConstants.PREF_VERBOSE_ENABLED);
+        return stored != null && stored;
+    }
+
+    /**
+     * Enables or disables verbose WebSocket logging, persisting the choice across Burp restarts
+     * @param enabled - true to log every proxied WebSocket message
+     */
+    public void setVerboseLoggingEnabled(boolean enabled) {
+        this.preferences.setBoolean(BTPConstants.PREF_VERBOSE_ENABLED, enabled);
+    }
+
+    /**
      * Enables or disables the WS -> HTTP downgrade, persisting the choice across Burp restarts
      * @param enabled - true to force LongPolling, false to leave the negotiation untouched
      */

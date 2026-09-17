@@ -47,6 +47,7 @@ public class BTPView extends JComponent {
     private String buttonText;
     private JComboBox<String> dropDownMenu;
     private JCheckBox downgradeCheckBox;
+    private JCheckBox verboseCheckBox;
     private BlazorHelper blazorHelper;
     private BTPSettings settings;
     private final int DESERIALIZE_IDX = 0;
@@ -69,7 +70,7 @@ public class BTPView extends JComponent {
         this.mainView = new JPanel();
         this.mainView.setLayout(new GridLayout(1, 2));
         this.buttonView = new JPanel();
-        this.buttonView.setLayout(new GridLayout(1, 4));
+        this.buttonView.setLayout(new GridLayout(1, 5));
 
         // Editor, where the user input goes
         this.editor = this._montoya.userInterface().createRawEditor();
@@ -111,6 +112,15 @@ public class BTPView extends JComponent {
             this.settings.setDowngradeEnabled(this.downgradeCheckBox.isSelected());
         });
         this.buttonView.add(this.downgradeCheckBox);
+
+        // Check-box, turns on per-message websocket logging for troubleshooting
+        this.verboseCheckBox = new JCheckBox(BTPConstants.VERBOSE_CHECKBOX_CAPTION);
+        this.verboseCheckBox.setToolTipText(BTPConstants.VERBOSE_CHECKBOX_TOOLTIP);
+        this.verboseCheckBox.setSelected(this.settings.isVerboseLoggingEnabled());
+        this.verboseCheckBox.addActionListener(e -> {
+            this.settings.setVerboseLoggingEnabled(this.verboseCheckBox.isSelected());
+        });
+        this.buttonView.add(this.verboseCheckBox);
 
         // Add the button view to main UI component
         this.topLevel.add(this.buttonView, BorderLayout.NORTH);

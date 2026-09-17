@@ -25,7 +25,30 @@ test {
     useJUnitPlatform()
 }
 
+// Stamp the build so the extension can report exactly which jar is loaded
+def buildId = {
+    try {
+        def sha = 'git rev-parse --short HEAD'.execute([], projectDir).text.trim()
+        def dirty = 'git status --porcelain'.execute([], projectDir).text.trim() ? '-dirty' : ''
+        return sha ? sha + dirty : 'unknown'
+    } catch (Exception ignored) {
+        return 'unknown'
+    }
+}()
+
+task writeBuildId {
+    def outputDir = file("$buildDir/generated-resources")
+    outputs.dir outputDir
+    doLast {
+        outputDir.mkdirs()
+        new File(outputDir, 'btp-build.properties').text = "build=${buildId}\n"
+    }
+}
+
+sourceSets.main.output.dir(file("$buildDir/generated-resources"), builtBy: 'writeBuildId')
+
 jar {
+    dependsOn writeBuildId
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
     manifest {
         attributes "Main-Class": "com.gdssecurity.BlazorTrafficProcessor"

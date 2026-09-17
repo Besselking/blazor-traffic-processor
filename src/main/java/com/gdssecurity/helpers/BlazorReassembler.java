@@ -173,6 +173,14 @@ public class BlazorReassembler {
     }
 
     /**
+     * Reports how much of a message is buffered while the rest of it arrives
+     * @return the number of buffered bytes
+     */
+    public synchronized int pendingBytes() {
+        return this.buffer.length;
+    }
+
+    /**
      * Discards any partially buffered message
      */
     public synchronized void reset() {

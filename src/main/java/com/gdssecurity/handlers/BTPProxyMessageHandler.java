@@ -27,6 +27,7 @@ import burp.api.montoya.proxy.websocket.TextMessageReceivedAction;
 import burp.api.montoya.proxy.websocket.TextMessageToBeSentAction;
 import burp.api.montoya.websocket.Direction;
 import com.gdssecurity.helpers.BTPMessageCache;
+import com.gdssecurity.helpers.BTPSettings;
 import com.gdssecurity.helpers.BlazorHelper;
 import com.gdssecurity.helpers.BlazorReassembler;
 
@@ -44,6 +45,7 @@ public class BTPProxyMessageHandler implements ProxyMessageHandler {
     private final Logging _logging;
     private final BlazorHelper blazorHelper;
     private final BTPMessageCache messageCache;
+    private final BTPSettings settings;
     // One stream per direction: a message is only ever split across messages travelling the same way
     private final BlazorReassembler clientToServer = new BlazorReassembler();
     private final BlazorReassembler serverToClient = new BlazorReassembler();
@@ -52,11 +54,13 @@ public class BTPProxyMessageHandler implements ProxyMessageHandler {
      * Constructor for the proxy message handler
      * @param montoyaApi - an instance of the Burp Montoya APIs
      * @param messageCache - the shared cache that the editor tab reads reassembled messages from
+     * @param settings - the BTP settings, consulted for whether to log every message
      */
-    public BTPProxyMessageHandler(MontoyaApi montoyaApi, BTPMessageCache messageCache) {
+    public BTPProxyMessageHandler(MontoyaApi montoyaApi, BTPMessageCache messageCache, BTPSettings settings) {
         this._logging = montoyaApi.logging();
         this.blazorHelper = new BlazorHelper(montoyaApi);
         this.messageCache = messageCache;
+        this.settings = settings;
     }
 
     /**
@@ -119,13 +123,13 @@ public class BTPProxyMessageHandler implements ProxyMessageHandler {
                     : this.serverToClient;
 
             List<BlazorReassembler.AssembledMessage> assembled = reassembler.accept(payload);
-            boolean isBlazor = false;
+            int deserialized = 0;
             for (BlazorReassembler.AssembledMessage completed : assembled) {
                 String json = this.blazorHelper.blazorUnpackToJsonString(completed.message());
                 if (json == null) {
                     continue;
                 }
-                isBlazor = true;
+                deserialized++;
                 if (completed.wasSplit()) {
                     // Only split messages need the cache; a self-contained one is deserialized by the editor directly
                     for (byte[] fragment : completed.fragments()) {
@@ -135,10 +139,17 @@ public class BTPProxyMessageHandler implements ProxyMessageHandler {
                             + completed.fragments().size() + " websocket messages.");
                 }
             }
-            // A message that completed nothing is either mid-message or not BlazorPack at all. Highlight the
-            // former too, since it is carrying part of a Blazor message that is still arriving.
-            if (isBlazor || reassembler.hasPendingMessage()) {
-                message.annotations().setHighlightColor(HighlightColor.CYAN);
+
+            // Every binary message on a Blazor websocket is Blazor traffic, whether or not it happens to be a
+            // whole message on its own. Highlighting only the ones that complete a message made the pieces of a
+            // split message look like unrelated traffic.
+            message.annotations().setHighlightColor(HighlightColor.CYAN);
+
+            if (this.settings.isVerboseLoggingEnabled()) {
+                this._logging.logToOutput(String.format(
+                        "[*] websocket %s %d bytes -> completed %d message(s), deserialized %d, %d byte(s) buffered awaiting the rest",
+                        message.direction() == Direction.CLIENT_TO_SERVER ? "to server" : "to client",
+                        payload.length, assembled.size(), deserialized, reassembler.pendingBytes()));
             }
         } catch (Exception e) {
             this._logging.logToError("[-] process - An unexpected error occurred while handling a websocket message: " + e.getMessage());

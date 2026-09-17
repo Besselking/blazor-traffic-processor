@@ -22,6 +22,7 @@ import burp.api.montoya.logging.Logging;
 import com.gdssecurity.handlers.BTPHttpRequestHandler;
 import com.gdssecurity.handlers.BTPHttpResponseHandler;
 import com.gdssecurity.handlers.BTPWebSocketCreationHandler;
+import com.gdssecurity.helpers.BTPBuild;
 import com.gdssecurity.helpers.BTPConstants;
 import com.gdssecurity.helpers.BTPMessageCache;
 import com.gdssecurity.helpers.BTPSettings;
@@ -70,7 +71,7 @@ public class BlazorTrafficProcessor implements BurpExtension, ExtensionUnloading
         this._montoya.proxy().registerRequestHandler(highlightHandler);
 
         // WebSocket Creation Handler (attaches a BlazorPack-aware handler to each proxied Blazor websocket)
-        BTPWebSocketCreationHandler webSocketCreationHandler = new BTPWebSocketCreationHandler(this._montoya, this.messageCache);
+        BTPWebSocketCreationHandler webSocketCreationHandler = new BTPWebSocketCreationHandler(this._montoya, this.messageCache, this.settings);
         this._montoya.proxy().registerWebSocketCreationHandler(webSocketCreationHandler);
 
         // Setup the BTP tab in BurpSuite (main nav bar)
@@ -82,7 +83,7 @@ public class BlazorTrafficProcessor implements BurpExtension, ExtensionUnloading
         this._montoya.userInterface().registerContextMenuItemsProvider(menuItemsProvider);
 
         this._montoya.extension().registerUnloadingHandler(this);
-        this.logging.logToOutput(BTPConstants.LOADED_LOG_MSG);
+        this.logging.logToOutput(BTPConstants.LOADED_LOG_MSG + BTPBuild.id());
     }
 
     /**
