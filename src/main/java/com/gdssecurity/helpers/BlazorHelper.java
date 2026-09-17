@@ -187,4 +187,40 @@ public class BlazorHelper {
         sb.append("]");
         return sb.toString();
     }
+
+    /**
+     * Deserializes a raw BlazorPack blob straight into its JSON string representation
+     * @param blob - a byte array containing the blazor bytes to deserialize
+     * @return - a string containing the JSON representation of the messages, or null if the blob could not be parsed
+     */
+    public String blazorUnpackToJsonString(byte[] blob) {
+        if (blob == null || blob.length == 0) {
+            return null;
+        }
+        try {
+            if (!BlazorReassembler.looksLikeCompleteMessages(blob)) {
+                // Not framed as BlazorPack, so skip the parse rather than logging an error for every stray byte.
+                // A websocket message carrying the middle of a larger message lands here on every click.
+                return null;
+            }
+            ArrayList<GenericMessage> messages = blazorUnpack(blob);
+            if (messages == null || messages.isEmpty() || messages.contains(null)) {
+                return null;
+            }
+            return messageArrayToString(messages);
+        } catch (Exception e) {
+            // Thrown for anything that is not well-formed BlazorPack, e.g. a message size that runs past the blob
+            this.logging.logToError("[-] blazorUnpackToJsonString - Unable to deserialize the provided blob: " + e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Checks whether a given blob looks like one or more BlazorPack messages
+     * @param blob - a byte array to test
+     * @return true if the blob deserializes cleanly, false otherwise
+     */
+    public boolean isBlazorPack(byte[] blob) {
+        return blazorUnpackToJsonString(blob) != null;
+    }
 }

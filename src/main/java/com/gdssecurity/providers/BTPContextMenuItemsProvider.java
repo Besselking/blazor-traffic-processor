@@ -20,6 +20,8 @@ import burp.api.montoya.http.message.HttpRequestResponse;
 import burp.api.montoya.logging.Logging;
 import burp.api.montoya.ui.contextmenu.ContextMenuEvent;
 import burp.api.montoya.ui.contextmenu.ContextMenuItemsProvider;
+import burp.api.montoya.ui.contextmenu.WebSocketContextMenuEvent;
+import burp.api.montoya.ui.contextmenu.WebSocketMessage;
 import com.gdssecurity.helpers.BlazorHelper;
 import com.gdssecurity.views.BTPView;
 import com.gdssecurity.helpers.BTPConstants;
@@ -92,5 +94,47 @@ public class BTPContextMenuItemsProvider implements ContextMenuItemsProvider {
         } else if (selection.response() != null && selection.response().body() != null && selection.response().body().length() != 0) {
             this.btpTab.setEditorText(selection.response().body());
         }
+    }
+
+    /**
+     * Gets called by Burpsuite when the right-click menu is invoked on a WebSocket message
+     * @param event This object can be queried to find out about the WebSocket messages associated with the context menu invocation.
+     *
+     * @return - an arraylist of components to include in the right-click menu
+     */
+    public List<Component> provideMenuItems(WebSocketContextMenuEvent event) {
+        ArrayList<Component> menuItems = new ArrayList<>();
+
+        // Send to BTP tab for ad-hoc serialization
+        JMenuItem sendToBTP = new JMenuItem();
+        sendToBTP.setText(BTPConstants.SEND_TO_BTP_CAPTION);
+        sendToBTP.addActionListener(e -> {
+            WebSocketMessage selection;
+            // Selected inside the websocket message editor
+            if (event.selectedWebSocketMessages().isEmpty() && event.messageEditorWebSocket().isPresent()) {
+                selection = event.messageEditorWebSocket().get().webSocketMessage();
+            } else if (!event.selectedWebSocketMessages().isEmpty()) { // Selected on an entry in the WebSockets history
+                selection = event.selectedWebSocketMessages().get(0);
+            } else {
+                this._logging.logToError("[-] provideMenuItems - No websocket message selected.");
+                return;
+            }
+            this.sendSelectionToBTP(selection);
+        });
+        menuItems.add(sendToBTP);
+        return menuItems;
+    }
+
+    /**
+     * Handles the selection of "Send body to BTP tab" menu option for a websocket message
+     * Sends the frame payload to the editor of the BTP tab
+     * @param selection - the selected WebSocketMessage object
+     */
+    private void sendSelectionToBTP(WebSocketMessage selection) {
+        if (selection.payload() == null || selection.payload().length() == 0) {
+            this._logging.logToError("[-] sendSelectionToBTP - Selected websocket message is empty.");
+            return;
+        }
+        this.btpTab.setEditorText(selection.payload());
     }
 }

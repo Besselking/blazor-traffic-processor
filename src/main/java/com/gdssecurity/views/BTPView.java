@@ -20,6 +20,8 @@ import burp.api.montoya.core.ByteArray;
 import burp.api.montoya.logging.Logging;
 import burp.api.montoya.ui.editor.RawEditor;
 import com.gdssecurity.MessageModel.GenericMessage;
+import com.gdssecurity.helpers.BTPConstants;
+import com.gdssecurity.helpers.BTPSettings;
 import com.gdssecurity.helpers.BlazorHelper;
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -44,18 +46,23 @@ public class BTPView extends JComponent {
     private JButton clearButton;
     private String buttonText;
     private JComboBox<String> dropDownMenu;
+    private JCheckBox downgradeCheckBox;
+    private JCheckBox verboseCheckBox;
     private BlazorHelper blazorHelper;
+    private BTPSettings settings;
     private final int DESERIALIZE_IDX = 0;
     private final int SERIALIZE_IDX = 1;
 
     /**
      * Constructor for the BTPView object
      * @param montoyaApi - an instance of the Burpsuite Montoya APIs
+     * @param settings - the BTP settings, so the downgrade can be toggled from this tab
      */
-    public BTPView(MontoyaApi montoyaApi) {
+    public BTPView(MontoyaApi montoyaApi, BTPSettings settings) {
         setLayout(new BorderLayout(10, 10));
         this._montoya = montoyaApi;
         this._logging = montoyaApi.logging();
+        this.settings = settings;
         this.blazorHelper = new BlazorHelper(this._montoya);
         this.buttonText = "Deserialize";
         this.topLevel = new JPanel();
@@ -63,7 +70,7 @@ public class BTPView extends JComponent {
         this.mainView = new JPanel();
         this.mainView.setLayout(new GridLayout(1, 2));
         this.buttonView = new JPanel();
-        this.buttonView.setLayout(new GridLayout(1, 3));
+        this.buttonView.setLayout(new GridLayout(1, 5));
 
         // Editor, where the user input goes
         this.editor = this._montoya.userInterface().createRawEditor();
@@ -96,6 +103,24 @@ public class BTPView extends JComponent {
             this.results.setContents(ByteArray.byteArray(""));
         });
         this.buttonView.add(this.clearButton);
+
+        // Check-box, toggles the legacy WS -> HTTP downgrade
+        this.downgradeCheckBox = new JCheckBox(BTPConstants.DOWNGRADE_CHECKBOX_CAPTION);
+        this.downgradeCheckBox.setToolTipText(BTPConstants.DOWNGRADE_CHECKBOX_TOOLTIP);
+        this.downgradeCheckBox.setSelected(this.settings.isDowngradeEnabled());
+        this.downgradeCheckBox.addActionListener(e -> {
+            this.settings.setDowngradeEnabled(this.downgradeCheckBox.isSelected());
+        });
+        this.buttonView.add(this.downgradeCheckBox);
+
+        // Check-box, turns on per-message websocket logging for troubleshooting
+        this.verboseCheckBox = new JCheckBox(BTPConstants.VERBOSE_CHECKBOX_CAPTION);
+        this.verboseCheckBox.setToolTipText(BTPConstants.VERBOSE_CHECKBOX_TOOLTIP);
+        this.verboseCheckBox.setSelected(this.settings.isVerboseLoggingEnabled());
+        this.verboseCheckBox.addActionListener(e -> {
+            this.settings.setVerboseLoggingEnabled(this.verboseCheckBox.isSelected());
+        });
+        this.buttonView.add(this.verboseCheckBox);
 
         // Add the button view to main UI component
         this.topLevel.add(this.buttonView, BorderLayout.NORTH);

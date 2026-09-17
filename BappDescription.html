@@ -5,10 +5,12 @@
 <h2>Features</h2>
 <ul>
 	<li>Converts BlazorPack messages to JSON and back</li>
-	<li>Highlights BlazorPack traffic in HTTP history</li>
-	<li>Editor tabs for modifying messages in-line (requires in-scope traffic)</li>
+	<li>Decodes Blazor Server page deltas (JS.RenderBatch) into readable edits, frames and strings</li>
+	<li>Highlights BlazorPack traffic in HTTP history and in the WebSockets history</li>
+	<li>Editor tabs for modifying messages in-line, both for HTTP bodies and for WebSocket frames (requires in-scope
+		traffic)</li>
 	<li>Standalone conversion tab for manual processing</li>
-	<li>Automatically downgrades WebSocket connections to HTTP</li>
+	<li>Optionally downgrades WebSocket connections to HTTP (LongPolling) for legacy workflows</li>
 </ul>
 
 <h2>Usage</h2>
@@ -16,8 +18,8 @@
 	<li>Add the Blazor Server application to your target scope</li>
 	<li>Navigate to the Blazor Server application through the proxy</li>
 	<li>BlazorPack-enabled requests and responses will automatically appear highlighted in cyan in the HTTP History</li>
-	<li>Click the "BTP" tab on in-scope requests or responses containing BlazorPack data to view the JSON representation
-	</li>
+	<li>Click the "BTP" tab on in-scope requests, responses, or WebSocket messages containing BlazorPack data to view
+		the JSON representation</li>
 	<li>Modify the JSON as needed for your security testing</li>
 	<li>Switch to the "Raw" tab to re-serialize your modifications back to BlazorPack format</li>
 	<li>Use the dedicated "BTP" suite tab for standalone conversions between formats</li>
