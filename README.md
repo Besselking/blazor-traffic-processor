@@ -51,6 +51,32 @@ Common to both:
 * Right-click menu option called "Send body to BTP tab"
   * You can right-click any request, response, or WebSocket message and select "Extensions" -> "BlazorTrafficProcessor" -> "Send body to BTP tab"
   * This sends the selected request/response body or WebSocket frame payload to the BTP tab, so you don't have to worry about copying/pasting raw bytes
+* The "BTP Repeater" tab, for capturing a client-to-server invocation, editing it, and sending it back. See [Repeater](#repeater) below.
+
+## Repeater
+Blazor Server keeps UI state on the server, keyed by ids the browser sends back in its invocations - `eventHandlerId`,
+`componentId`, and the arguments to `DispatchEventAsync` / `BeginInvokeDotNetFromJS`. Those ids are exactly the kind
+of thing worth tampering with: firing a handler the UI never exposed to you, acting on another component, or pushing a
+malformed argument into a server-side handler. This is an authenticated user manipulating their own outbound traffic -
+no MITM needed, since it is the tester's own connection.
+
+The "BTP Repeater" suite tab makes that loop quick:
+
+1. Right-click a client-to-server WebSocket message (in the WebSockets history or an intercepted message) and choose
+   **"Send invocation to BTP Repeater (edit & resend)"**. BTP deserializes it to JSON - reassembling it from the
+   WebSockets history first if it arrived split - and loads it into the Repeater, selecting the connection it came from.
+2. Edit the JSON.
+3. Click **"Serialize & Send"**. BTP re-serializes the edited JSON to BlazorPack and sends it back through the live
+   connection.
+
+Notes:
+* The **Connection** dropdown lists the Blazor WebSockets currently open through the proxy; **Refresh** re-reads it.
+  A connection that has closed drops off the list, and sending on one that closes is reported rather than silently lost.
+* **Send as** defaults to "To server", the useful direction for invocation tampering; "To client" is available for
+  testing how the browser handles server-originated messages.
+* A split message is sent as a single frame. The server reconstructs a message from its VarInt length prefix, not from
+  the WebSocket framing, so the original fragmentation does not need reproducing - which is why an invocation that is
+  read-only in the editor tab (because one frame cannot represent the whole message) is fully editable here.
 
 ## Render Batches (Page Deltas)
 Blazor Server pushes UI updates to the browser as `JS.RenderBatch` invocations. The batch itself is **not** BlazorPack:

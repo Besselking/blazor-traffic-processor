@@ -23,6 +23,9 @@ import burp.api.montoya.ui.contextmenu.ContextMenuItemsProvider;
 import burp.api.montoya.ui.contextmenu.WebSocketContextMenuEvent;
 import burp.api.montoya.ui.contextmenu.WebSocketMessage;
 import com.gdssecurity.helpers.BlazorHelper;
+import com.gdssecurity.helpers.BTPHistoryAssembler;
+import com.gdssecurity.helpers.BTPWebSocketRegistry;
+import com.gdssecurity.views.BTPRepeaterView;
 import com.gdssecurity.views.BTPView;
 import com.gdssecurity.helpers.BTPConstants;
 
@@ -39,18 +42,25 @@ public class BTPContextMenuItemsProvider implements ContextMenuItemsProvider {
     private MontoyaApi _montoya;
     private Logging _logging;
     private BTPView btpTab;
+    private BTPRepeaterView repeaterTab;
+    private BTPWebSocketRegistry registry;
     private BlazorHelper blazorHelper;
 
     /**
      * Construct an instance of the menu provider
      * @param montoyaApi - an instance of the Burpsuite Montoya APIs
      * @param btpTab - an instance of the BTP view, used to send the contents to BTP tab
+     * @param repeaterTab - an instance of the BTP Repeater view, used to send an invocation for editing/resending
+     * @param registry - the registry of open Blazor WebSockets, used to find the connection a message came from
      */
-    public BTPContextMenuItemsProvider(MontoyaApi montoyaApi, BTPView btpTab) {
+    public BTPContextMenuItemsProvider(MontoyaApi montoyaApi, BTPView btpTab, BTPRepeaterView repeaterTab,
+                                       BTPWebSocketRegistry registry) {
         this._montoya = montoyaApi;
         this._logging = montoyaApi.logging();
         this.blazorHelper = new BlazorHelper(this._montoya);
         this.btpTab = btpTab;
+        this.repeaterTab = repeaterTab;
+        this.registry = registry;
     }
 
     /**
@@ -122,7 +132,56 @@ public class BTPContextMenuItemsProvider implements ContextMenuItemsProvider {
             this.sendSelectionToBTP(selection);
         });
         menuItems.add(sendToBTP);
+
+        // Send to the repeater for editing and resending through the live connection
+        JMenuItem sendToRepeater = new JMenuItem();
+        sendToRepeater.setText(BTPConstants.SEND_TO_REPEATER_CAPTION);
+        sendToRepeater.addActionListener(e -> {
+            WebSocketMessage selection;
+            if (event.selectedWebSocketMessages().isEmpty() && event.messageEditorWebSocket().isPresent()) {
+                selection = event.messageEditorWebSocket().get().webSocketMessage();
+            } else if (!event.selectedWebSocketMessages().isEmpty()) {
+                selection = event.selectedWebSocketMessages().get(0);
+            } else {
+                this._logging.logToError("[-] provideMenuItems - No websocket message selected.");
+                return;
+            }
+            this.sendSelectionToRepeater(selection);
+        });
+        menuItems.add(sendToRepeater);
         return menuItems;
+    }
+
+    /**
+     * Handles "Send invocation to BTP Repeater": deserializes the selected websocket message (reassembling from
+     * history if it was split) and loads it into the repeater, selecting the connection it came from
+     * @param selection - the selected WebSocketMessage object
+     */
+    private void sendSelectionToRepeater(WebSocketMessage selection) {
+        if (selection.payload() == null || selection.payload().length() == 0) {
+            this._logging.logToError("[-] sendSelectionToRepeater - Selected websocket message is empty.");
+            return;
+        }
+        byte[] payload = selection.payload().getBytes();
+
+        // Prefer a standalone decode; fall back to rebuilding a split message from the WebSockets history
+        String json = this.blazorHelper.blazorUnpackToJsonString(payload);
+        if (json == null) {
+            BTPHistoryAssembler.Result rebuilt = BTPHistoryAssembler.rebuild(this._montoya, this.blazorHelper, selection);
+            if (rebuilt != null) {
+                json = rebuilt.json();
+            }
+        }
+        if (json == null) {
+            this._logging.logToError("[-] sendSelectionToRepeater - Could not deserialize the selected message.");
+            return;
+        }
+
+        BTPWebSocketRegistry.Entry connection = null;
+        if (selection.upgradeRequest() != null && selection.upgradeRequest().url() != null) {
+            connection = this.registry.findByUrl(selection.upgradeRequest().url());
+        }
+        this.repeaterTab.loadInvocation(connection, json, selection.direction());
     }
 
     /**

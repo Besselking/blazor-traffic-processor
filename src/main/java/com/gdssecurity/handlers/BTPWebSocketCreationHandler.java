@@ -24,6 +24,7 @@ import burp.api.montoya.proxy.websocket.ProxyWebSocketCreationHandler;
 import com.gdssecurity.helpers.BTPConstants;
 import com.gdssecurity.helpers.BTPMessageCache;
 import com.gdssecurity.helpers.BTPSettings;
+import com.gdssecurity.helpers.BTPWebSocketRegistry;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -38,6 +39,7 @@ public class BTPWebSocketCreationHandler implements ProxyWebSocketCreationHandle
     private final Logging _logging;
     private final BTPMessageCache messageCache;
     private final BTPSettings settings;
+    private final BTPWebSocketRegistry registry;
     // Kept so the per-connection handlers can be detached when the extension unloads
     private final List<Registration> registrations = Collections.synchronizedList(new ArrayList<>());
 
@@ -46,12 +48,15 @@ public class BTPWebSocketCreationHandler implements ProxyWebSocketCreationHandle
      * @param montoyaApi - an instance of the Burp Montoya APIs
      * @param messageCache - the shared cache that reassembled messages are published to
      * @param settings - the BTP settings, passed through to the per-connection message handler
+     * @param registry - the registry of open Blazor WebSockets, so the repeater can send on them
      */
-    public BTPWebSocketCreationHandler(MontoyaApi montoyaApi, BTPMessageCache messageCache, BTPSettings settings) {
+    public BTPWebSocketCreationHandler(MontoyaApi montoyaApi, BTPMessageCache messageCache, BTPSettings settings,
+                                       BTPWebSocketRegistry registry) {
         this._montoya = montoyaApi;
         this._logging = montoyaApi.logging();
         this.messageCache = messageCache;
         this.settings = settings;
+        this.registry = registry;
     }
 
     /**
@@ -68,9 +73,12 @@ public class BTPWebSocketCreationHandler implements ProxyWebSocketCreationHandle
         if (!upgradeRequest.url().contains(BTPConstants.BLAZOR_WS_URL)) {
             return;
         }
+        // Track the open connection so the repeater can send an edited invocation back through it
+        long connectionId = this.registry.register(upgradeRequest.url(), webSocketCreation.proxyWebSocket());
         // A handler per websocket, so each connection reassembles its own stream
         this.registrations.add(webSocketCreation.proxyWebSocket()
-                .registerProxyMessageHandler(new BTPProxyMessageHandler(this._montoya, this.messageCache, this.settings)));
+                .registerProxyMessageHandler(new BTPProxyMessageHandler(
+                        this._montoya, this.messageCache, this.settings, this.registry, connectionId)));
         this._logging.logToOutput("[+] handleWebSocketCreation - Attached BTP handler to Blazor WebSocket: " + upgradeRequest.url());
     }
 

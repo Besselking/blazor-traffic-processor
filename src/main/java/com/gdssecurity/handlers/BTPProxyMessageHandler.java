@@ -27,6 +27,7 @@ import burp.api.montoya.proxy.websocket.TextMessageReceivedAction;
 import burp.api.montoya.proxy.websocket.TextMessageToBeSentAction;
 import burp.api.montoya.websocket.Direction;
 import com.gdssecurity.helpers.BTPMessageCache;
+import com.gdssecurity.helpers.BTPWebSocketRegistry;
 import com.gdssecurity.helpers.BTPSettings;
 import com.gdssecurity.helpers.BlazorHelper;
 import com.gdssecurity.helpers.BlazorReassembler;
@@ -46,6 +47,8 @@ public class BTPProxyMessageHandler implements ProxyMessageHandler {
     private final BlazorHelper blazorHelper;
     private final BTPMessageCache messageCache;
     private final BTPSettings settings;
+    private final BTPWebSocketRegistry registry;
+    private final long connectionId;
     // One stream per direction: a message is only ever split across messages travelling the same way
     private final BlazorReassembler clientToServer = new BlazorReassembler();
     private final BlazorReassembler serverToClient = new BlazorReassembler();
@@ -55,12 +58,26 @@ public class BTPProxyMessageHandler implements ProxyMessageHandler {
      * @param montoyaApi - an instance of the Burp Montoya APIs
      * @param messageCache - the shared cache that the editor tab reads reassembled messages from
      * @param settings - the BTP settings, consulted for whether to log every message
+     * @param registry - the registry of open Blazor WebSockets, so this connection can be dropped when it closes
+     * @param connectionId - this connection's id in the registry
      */
-    public BTPProxyMessageHandler(MontoyaApi montoyaApi, BTPMessageCache messageCache, BTPSettings settings) {
+    public BTPProxyMessageHandler(MontoyaApi montoyaApi, BTPMessageCache messageCache, BTPSettings settings,
+                                  BTPWebSocketRegistry registry, long connectionId) {
         this._logging = montoyaApi.logging();
         this.blazorHelper = new BlazorHelper(montoyaApi);
         this.messageCache = messageCache;
         this.settings = settings;
+        this.registry = registry;
+        this.connectionId = connectionId;
+    }
+
+    /**
+     * Called by Burp when this proxied WebSocket closes; drops it from the registry so the repeater stops
+     * offering a connection that can no longer be sent on
+     */
+    @Override
+    public void onClose() {
+        this.registry.remove(this.connectionId);
     }
 
     /**
