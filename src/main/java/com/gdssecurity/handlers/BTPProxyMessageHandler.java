@@ -25,34 +25,48 @@ import burp.api.montoya.proxy.websocket.InterceptedTextMessage;
 import burp.api.montoya.proxy.websocket.ProxyMessageHandler;
 import burp.api.montoya.proxy.websocket.TextMessageReceivedAction;
 import burp.api.montoya.proxy.websocket.TextMessageToBeSentAction;
+import burp.api.montoya.websocket.Direction;
+import com.gdssecurity.helpers.BTPMessageCache;
 import com.gdssecurity.helpers.BlazorHelper;
+import com.gdssecurity.helpers.BlazorReassembler;
+
+import java.util.List;
 
 /**
- * Class to handle highlighting BlazorPack frames on a proxied WebSocket.
- * Frames are passed through untouched - tampering happens in the "BTP" WebSocket editor tab.
+ * Class to handle BlazorPack frames on a proxied WebSocket.
+ *
+ * Frames are passed through untouched - tampering happens in the "BTP" WebSocket editor tab. Alongside that, each
+ * direction is treated as a byte stream so that BlazorPack messages split across several WebSocket messages can be
+ * reassembled and deserialized; the result is cached for the editor to pick up.
  */
 public class BTPProxyMessageHandler implements ProxyMessageHandler {
 
     private final Logging _logging;
     private final BlazorHelper blazorHelper;
+    private final BTPMessageCache messageCache;
+    // One stream per direction: a message is only ever split across messages travelling the same way
+    private final BlazorReassembler clientToServer = new BlazorReassembler();
+    private final BlazorReassembler serverToClient = new BlazorReassembler();
 
     /**
      * Constructor for the proxy message handler
      * @param montoyaApi - an instance of the Burp Montoya APIs
+     * @param messageCache - the shared cache that the editor tab reads reassembled messages from
      */
-    public BTPProxyMessageHandler(MontoyaApi montoyaApi) {
+    public BTPProxyMessageHandler(MontoyaApi montoyaApi, BTPMessageCache messageCache) {
         this._logging = montoyaApi.logging();
         this.blazorHelper = new BlazorHelper(montoyaApi);
+        this.messageCache = messageCache;
     }
 
     /**
-     * Handle a binary frame as it arrives at the proxy, highlighting it if it holds BlazorPack messages
+     * Handle a binary frame as it arrives at the proxy, reassembling and highlighting BlazorPack messages
      * @param interceptedBinaryMessage - the intercepted binary websocket message
      * @return - the un-modified message, following the current interception rules
      */
     @Override
     public BinaryMessageReceivedAction handleBinaryMessageReceived(InterceptedBinaryMessage interceptedBinaryMessage) {
-        highlight(interceptedBinaryMessage);
+        process(interceptedBinaryMessage);
         return BinaryMessageReceivedAction.continueWith(interceptedBinaryMessage);
     }
 
@@ -90,18 +104,44 @@ public class BTPProxyMessageHandler implements ProxyMessageHandler {
     }
 
     /**
-     * Highlights a websocket message in Cyan when it carries BlazorPack data
-     * @param message - the intercepted binary message to annotate
+     * Feeds a websocket message into the reassembler for its direction, caches whatever it completes,
+     * and highlights the message if it carries BlazorPack data
+     * @param message - the intercepted binary message
      */
-    private void highlight(InterceptedBinaryMessage message) {
+    private void process(InterceptedBinaryMessage message) {
         try {
-            if (message.payload() != null
-                    && message.payload().length() != 0
-                    && this.blazorHelper.isBlazorPack(message.payload().getBytes())) {
+            if (message.payload() == null || message.payload().length() == 0) {
+                return;
+            }
+            byte[] payload = message.payload().getBytes();
+            BlazorReassembler reassembler = message.direction() == Direction.CLIENT_TO_SERVER
+                    ? this.clientToServer
+                    : this.serverToClient;
+
+            List<BlazorReassembler.AssembledMessage> assembled = reassembler.accept(payload);
+            boolean isBlazor = false;
+            for (BlazorReassembler.AssembledMessage completed : assembled) {
+                String json = this.blazorHelper.blazorUnpackToJsonString(completed.message());
+                if (json == null) {
+                    continue;
+                }
+                isBlazor = true;
+                if (completed.wasSplit()) {
+                    // Only split messages need the cache; a self-contained one is deserialized by the editor directly
+                    for (byte[] fragment : completed.fragments()) {
+                        this.messageCache.put(fragment, json, completed.fragments().size());
+                    }
+                    this._logging.logToOutput("[+] process - Reassembled a BlazorPack message from "
+                            + completed.fragments().size() + " websocket messages.");
+                }
+            }
+            // A message that completed nothing is either mid-message or not BlazorPack at all. Highlight the
+            // former too, since it is carrying part of a Blazor message that is still arriving.
+            if (isBlazor || reassembler.hasPendingMessage()) {
                 message.annotations().setHighlightColor(HighlightColor.CYAN);
             }
         } catch (Exception e) {
-            this._logging.logToError("[-] highlight - An unexpected error occurred while highlighting a websocket message: " + e.getMessage());
+            this._logging.logToError("[-] process - An unexpected error occurred while handling a websocket message: " + e.getMessage());
         }
     }
 }

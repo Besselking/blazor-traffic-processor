@@ -42,6 +42,7 @@ Common to both:
   * Clicking on this tab will convert the serialized data from BlazorPack to JSON.
   * After editing the JSON (either in Intercept or Repeater), click the "Raw" tab to re-serialize with your payloads
 * Page deltas (`JS.RenderBatch`) are decoded automatically. See [Render Batches](#render-batches-page-deltas) below.
+* Messages that arrive split across several WebSocket messages are reassembled. See [Split Messages](#split-messages) below.
 * The "BTP" Burpsuite tab, which allows for ad-hoc conversions of Blazor->JSON and JSON->Blazor
   * The left-hand editor is for your input (JSON or raw Blazor)
   * The right-hand editor is for the results of the conversion
@@ -97,6 +98,30 @@ edit `BinaryBytes`.
 If a batch cannot be decoded (a truncated capture, or a future format change) the `RenderBatch` key is simply omitted
 and a note is written to the extension's output log; the raw bytes are always left intact. Note that the decoder reads
 the UTF-8 string table, which is what Blazor Server emits; the newer opt-in UTF-16 string table is not decoded.
+
+## Split Messages
+A BlazorPack message is not guaranteed to arrive in a single WebSocket message. Large payloads - render batches
+especially - are commonly split, which is exactly why every message carries a VarInt length prefix. Taken on its own,
+such a message is undecodable: the first piece declares a length longer than the bytes present, and the later pieces
+start mid-message.
+
+BTP treats each direction of each connection as a byte stream, buffers it, and deserializes messages as their last
+byte arrives. Clicking any of the WebSocket messages that carried a split message shows the whole thing:
+
+```json
+{
+   "_BTP": "Read-only: this BlazorPack message arrived split across 4 websocket messages, so edits here cannot be written back to a single one.",
+   "Messages": [{ "Target": "JS.RenderBatch", "...": "..." }]
+}
+```
+
+Worth knowing:
+* **Reassembled views are read-only.** The decoded message spans several WebSocket messages, so there is no single one
+  to write edits back to. BTP returns the original bytes untouched and ignores edits made in this view. Messages that
+  arrive whole are unaffected and stay editable.
+* **Reassembly happens as traffic passes through the proxy.** Messages proxied before the extension was loaded were
+  never streamed through it, so they cannot be reassembled after the fact.
+* A stream that desynchronises, or that turns out not to be BlazorPack, is dropped rather than buffered indefinitely.
 
 ## Downgrade Explained (WS -> HTTP) (legacy)
 _This is no longer the default. BTP now handles BlazorPack over WebSockets natively; the downgrade is kept as an opt-in for workflows that rely on the HTTP tooling (Repeater, Intruder, and the request/response editors)._

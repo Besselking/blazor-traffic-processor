@@ -25,9 +25,11 @@ import burp.api.montoya.ui.editor.WebSocketMessageEditor;
 import burp.api.montoya.ui.editor.extension.EditorMode;
 import burp.api.montoya.ui.editor.extension.ExtensionProvidedWebSocketMessageEditor;
 import com.gdssecurity.helpers.BTPConstants;
+import com.gdssecurity.helpers.BTPMessageCache;
 import com.gdssecurity.helpers.BlazorHelper;
 import org.json.JSONArray;
 import org.json.JSONException;
+import org.json.JSONObject;
 
 import java.awt.Component;
 
@@ -41,17 +43,22 @@ public class BTPWebSocketMessageEditor implements ExtensionProvidedWebSocketMess
     private final Logging logging;
     private final BlazorHelper blazorHelper;
     private final WebSocketMessageEditor editor;
+    private final BTPMessageCache messageCache;
     private WebSocketMessage message;
+    // Set when the displayed JSON came from reassembly, i.e. it describes more than just this websocket message
+    private boolean reassembled;
 
     /**
      * Constructs a new BTPWebSocketMessageEditor object
      * @param api - an instance of the Montoya API
      * @param editorMode - options for the editor object
+     * @param messageCache - the shared cache holding messages reassembled from several websocket messages
      */
-    public BTPWebSocketMessageEditor(MontoyaApi api, EditorMode editorMode) {
+    public BTPWebSocketMessageEditor(MontoyaApi api, EditorMode editorMode, BTPMessageCache messageCache) {
         this._montoya = api;
         this.logging = api.logging();
         this.blazorHelper = new BlazorHelper(api);
+        this.messageCache = messageCache;
         this.editor = editorMode == EditorMode.READ_ONLY
                 ? api.userInterface().createWebSocketMessageEditor(EditorOptions.READ_ONLY)
                 : api.userInterface().createWebSocketMessageEditor();
@@ -64,7 +71,8 @@ public class BTPWebSocketMessageEditor implements ExtensionProvidedWebSocketMess
      */
     @Override
     public ByteArray getMessage() {
-        if (!this.editor.isModified()) {
+        if (this.reassembled || !this.editor.isModified()) {
+            // A reassembled view spans several websocket messages, so it cannot be written back to this one
             return this.message == null ? ByteArray.byteArray(new byte[0]) : this.message.payload();
         }
         ByteArray contents = this.editor.getContents();
@@ -95,13 +103,29 @@ public class BTPWebSocketMessageEditor implements ExtensionProvidedWebSocketMess
     @Override
     public void setMessage(WebSocketMessage webSocketMessage) {
         this.message = webSocketMessage;
-        String json = this.blazorHelper.blazorUnpackToJsonString(webSocketMessage.payload().getBytes());
-        if (json == null) {
-            this.logging.logToError("[-] setMessage - Unable to deserialize the selected websocket message.");
-            this.editor.setContents(webSocketMessage.payload());
+        this.reassembled = false;
+        byte[] payload = webSocketMessage.payload().getBytes();
+
+        String json = this.blazorHelper.blazorUnpackToJsonString(payload);
+        if (json != null) {
+            this.editor.setContents(ByteArray.byteArray(json));
             return;
         }
-        this.editor.setContents(ByteArray.byteArray(json));
+
+        // The message does not stand on its own, so it is probably part of one that spans several
+        // websocket messages. The proxy reassembles those, so look for the completed message here.
+        BTPMessageCache.Entry entry = this.messageCache.get(payload);
+        if (entry != null) {
+            this.reassembled = true;
+            JSONObject wrapper = new JSONObject();
+            wrapper.put(BTPConstants.REASSEMBLED_NOTE_KEY, String.format(BTPConstants.REASSEMBLED_NOTE, entry.fragmentCount()));
+            wrapper.put(BTPConstants.REASSEMBLED_MESSAGES_KEY, new JSONArray(entry.json()));
+            this.editor.setContents(ByteArray.byteArray(wrapper.toString(3)));
+            return;
+        }
+
+        this.logging.logToError("[-] setMessage - Unable to deserialize the selected websocket message.");
+        this.editor.setContents(webSocketMessage.payload());
     }
 
     /**
@@ -123,7 +147,9 @@ public class BTPWebSocketMessageEditor implements ExtensionProvidedWebSocketMess
         if (!this._montoya.scope().isInScope(webSocketMessage.upgradeRequest().url())) {
             return false;
         }
-        return this.blazorHelper.isBlazorPack(webSocketMessage.payload().getBytes());
+        byte[] payload = webSocketMessage.payload().getBytes();
+        // Either the message stands on its own, or it is part of one the proxy reassembled
+        return this.blazorHelper.isBlazorPack(payload) || this.messageCache.get(payload) != null;
     }
 
     /**

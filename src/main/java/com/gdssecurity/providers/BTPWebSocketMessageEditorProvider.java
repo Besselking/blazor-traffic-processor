@@ -20,6 +20,7 @@ import burp.api.montoya.ui.editor.extension.EditorCreationContext;
 import burp.api.montoya.ui.editor.extension.ExtensionProvidedWebSocketMessageEditor;
 import burp.api.montoya.ui.editor.extension.WebSocketMessageEditorProvider;
 import com.gdssecurity.editors.BTPWebSocketMessageEditor;
+import com.gdssecurity.helpers.BTPMessageCache;
 
 /**
  * Class to implement a WebSocketMessageEditorProvider, which will create new tabs on each BlazorPack websocket message
@@ -27,13 +28,16 @@ import com.gdssecurity.editors.BTPWebSocketMessageEditor;
 public class BTPWebSocketMessageEditorProvider implements WebSocketMessageEditorProvider {
 
     private final MontoyaApi _montoya;
+    private final BTPMessageCache messageCache;
 
     /**
      * Construct a BTPWebSocketMessageEditorProvider
      * @param api - an instance of the Montoya API
+     * @param messageCache - the shared cache holding messages reassembled from several websocket messages
      */
-    public BTPWebSocketMessageEditorProvider(MontoyaApi api) {
+    public BTPWebSocketMessageEditorProvider(MontoyaApi api, BTPMessageCache messageCache) {
         this._montoya = api;
+        this.messageCache = messageCache;
     }
 
     /**
@@ -43,6 +47,6 @@ public class BTPWebSocketMessageEditorProvider implements WebSocketMessageEditor
      */
     @Override
     public ExtensionProvidedWebSocketMessageEditor provideMessageEditor(EditorCreationContext editorContext) {
-        return new BTPWebSocketMessageEditor(this._montoya, editorContext.editorMode());
+        return new BTPWebSocketMessageEditor(this._montoya, editorContext.editorMode(), this.messageCache);
     }
 }

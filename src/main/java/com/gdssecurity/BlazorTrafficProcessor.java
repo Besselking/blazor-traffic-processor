@@ -23,6 +23,7 @@ import com.gdssecurity.handlers.BTPHttpRequestHandler;
 import com.gdssecurity.handlers.BTPHttpResponseHandler;
 import com.gdssecurity.handlers.BTPWebSocketCreationHandler;
 import com.gdssecurity.helpers.BTPConstants;
+import com.gdssecurity.helpers.BTPMessageCache;
 import com.gdssecurity.helpers.BTPSettings;
 import com.gdssecurity.providers.BTPContextMenuItemsProvider;
 import com.gdssecurity.providers.BTPHttpRequestEditorProvider;
@@ -38,6 +39,7 @@ public class BlazorTrafficProcessor implements BurpExtension, ExtensionUnloading
     private MontoyaApi _montoya;
     private Logging logging;
     private BTPSettings settings;
+    private BTPMessageCache messageCache;
 
     /**
      * Setup function that gets called on extension startup. Register all required handlers, providers, etc.
@@ -49,6 +51,7 @@ public class BlazorTrafficProcessor implements BurpExtension, ExtensionUnloading
         this._montoya.extension().setName(BTPConstants.EXTENSION_NAME);
         this.logging = this._montoya.logging();
         this.settings = new BTPSettings(this._montoya);
+        this.messageCache = new BTPMessageCache();
 
         // Request/Response Editor Providers
         BTPHttpRequestEditorProvider requestEditorProvider = new BTPHttpRequestEditorProvider(this._montoya);
@@ -57,7 +60,7 @@ public class BlazorTrafficProcessor implements BurpExtension, ExtensionUnloading
         this._montoya.userInterface().registerHttpResponseEditorProvider(responseEditorProvider);
 
         // WebSocket Message Editor Provider (adds the "BTP" tab to proxied Blazor websocket messages)
-        BTPWebSocketMessageEditorProvider webSocketEditorProvider = new BTPWebSocketMessageEditorProvider(this._montoya);
+        BTPWebSocketMessageEditorProvider webSocketEditorProvider = new BTPWebSocketMessageEditorProvider(this._montoya, this.messageCache);
         this._montoya.userInterface().registerWebSocketMessageEditorProvider(webSocketEditorProvider);
 
         // Request/Response Handlers (for Highlighting + optional Downgrade WS to HTTP)
@@ -67,7 +70,7 @@ public class BlazorTrafficProcessor implements BurpExtension, ExtensionUnloading
         this._montoya.proxy().registerRequestHandler(highlightHandler);
 
         // WebSocket Creation Handler (attaches a BlazorPack-aware handler to each proxied Blazor websocket)
-        BTPWebSocketCreationHandler webSocketCreationHandler = new BTPWebSocketCreationHandler(this._montoya);
+        BTPWebSocketCreationHandler webSocketCreationHandler = new BTPWebSocketCreationHandler(this._montoya, this.messageCache);
         this._montoya.proxy().registerWebSocketCreationHandler(webSocketCreationHandler);
 
         // Setup the BTP tab in BurpSuite (main nav bar)

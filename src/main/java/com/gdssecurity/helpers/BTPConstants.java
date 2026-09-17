@@ -50,6 +50,12 @@ public final class BTPConstants {
     public static final String TRANSPORT_STR = "[{'transport':'ServerSentEvents','transferFormats':['Text']},{'transport':'LongPolling','transferFormats':['Text','Binary']}]";
     public static final JSONArray DOWNGRADED_TRANSPORTS = new JSONArray(TRANSPORT_STR);
 
+    // WebSocket Reassembly Constants
+    public static final String REASSEMBLED_NOTE_KEY = "_BTP";
+    public static final String REASSEMBLED_MESSAGES_KEY = "Messages";
+    public static final String REASSEMBLED_NOTE =
+            "Read-only: this BlazorPack message arrived split across %d websocket messages, so edits here cannot be written back to a single one.";
+
     // RenderBatch (page delta) Constants
     public static final String RENDER_BATCH_TARGET = "JS.RenderBatch";
     public static final String RENDER_BATCH_KEY = "RenderBatch";

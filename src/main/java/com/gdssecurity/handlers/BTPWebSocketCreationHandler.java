@@ -21,6 +21,7 @@ import burp.api.montoya.logging.Logging;
 import burp.api.montoya.proxy.websocket.ProxyWebSocketCreation;
 import burp.api.montoya.proxy.websocket.ProxyWebSocketCreationHandler;
 import com.gdssecurity.helpers.BTPConstants;
+import com.gdssecurity.helpers.BTPMessageCache;
 
 /**
  * Class to detect Blazor WebSockets as they are created through the proxy, and attach a message handler to them
@@ -29,14 +30,17 @@ public class BTPWebSocketCreationHandler implements ProxyWebSocketCreationHandle
 
     private final MontoyaApi _montoya;
     private final Logging _logging;
+    private final BTPMessageCache messageCache;
 
     /**
      * Constructor for the websocket creation handler
      * @param montoyaApi - an instance of the Burp Montoya APIs
+     * @param messageCache - the shared cache that reassembled messages are published to
      */
-    public BTPWebSocketCreationHandler(MontoyaApi montoyaApi) {
+    public BTPWebSocketCreationHandler(MontoyaApi montoyaApi, BTPMessageCache messageCache) {
         this._montoya = montoyaApi;
         this._logging = montoyaApi.logging();
+        this.messageCache = messageCache;
     }
 
     /**
@@ -53,7 +57,8 @@ public class BTPWebSocketCreationHandler implements ProxyWebSocketCreationHandle
         if (!upgradeRequest.url().contains(BTPConstants.BLAZOR_WS_URL)) {
             return;
         }
-        webSocketCreation.proxyWebSocket().registerProxyMessageHandler(new BTPProxyMessageHandler(this._montoya));
+        // A handler per websocket, so each connection reassembles its own stream
+        webSocketCreation.proxyWebSocket().registerProxyMessageHandler(new BTPProxyMessageHandler(this._montoya, this.messageCache));
         this._logging.logToOutput("[+] handleWebSocketCreation - Attached BTP handler to Blazor WebSocket: " + upgradeRequest.url());
     }
 }
