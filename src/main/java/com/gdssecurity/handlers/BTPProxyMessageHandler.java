@@ -130,8 +130,11 @@ public class BTPProxyMessageHandler implements ProxyMessageHandler {
                     continue;
                 }
                 deserialized++;
+                // Index every message, not just reassembled ones. Burp can hand us a whole message while the
+                // WebSockets history still lists the pieces it arrived in, and the editor is opened against one
+                // of those pieces, so it has to be able to find the message any piece belongs to.
+                this.messageCache.putMessage(completed.message(), json, completed.fragments().size());
                 if (completed.wasSplit()) {
-                    // Only split messages need the cache; a self-contained one is deserialized by the editor directly
                     for (byte[] fragment : completed.fragments()) {
                         this.messageCache.put(fragment, json, completed.fragments().size());
                     }

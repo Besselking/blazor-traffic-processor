@@ -105,8 +105,13 @@ especially - are commonly split, which is exactly why every message carries a Va
 such a message is undecodable: the first piece declares a length longer than the bytes present, and the later pieces
 start mid-message.
 
-BTP treats each direction of each connection as a byte stream, buffers it, and deserializes messages as their last
-byte arrives. Clicking any of the WebSocket messages that carried a split message shows the whole thing:
+A BlazorPack message and a WebSocket message come apart in both directions. A message can be split across several
+WebSocket messages, and Burp can hand the extension a whole message while the WebSockets history still lists the
+pieces it arrived in - in which case only the first row is annotated and the rest look like unrelated traffic.
+
+BTP handles both. It treats each direction of each connection as a byte stream, buffers it, and deserializes
+messages as their last byte arrives; every deserialized message is then indexed so that a row showing any part of
+it resolves to the whole thing. Clicking any of the WebSocket messages that carried a message shows all of it:
 
 ```json
 {
@@ -123,7 +128,9 @@ alignment.
 Worth knowing:
 * **Every message on a Blazor WebSocket gets a BTP tab**, including ones BTP cannot deserialize. Rather than hiding
   the tab, it explains what the message is: a handshake record, a piece of a message BTP never saw in full, or bytes
-  it could not make sense of. A missing tab means the connection is out of scope or is not a Blazor WebSocket.
+  it could not make sense of. Unlike the HTTP editor tabs, the WebSocket tab does not require the target to be in
+  scope - the `_blazor` upgrade URL is specific enough on its own, and requiring scope as well made a missing tab
+  impossible to tell apart from a bug.
 * **Reassembled views are read-only.** The decoded message spans several WebSocket messages, so there is no single one
   to write edits back to. BTP returns the original bytes untouched and ignores edits made in this view. Messages that
   arrive whole are unaffected and stay editable.

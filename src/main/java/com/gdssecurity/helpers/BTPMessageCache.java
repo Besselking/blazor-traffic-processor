@@ -18,24 +18,32 @@ package com.gdssecurity.helpers;
 import java.math.BigInteger;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.ArrayDeque;
 import java.util.Collections;
+import java.util.Deque;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * Class to remember the deserialized form of BlazorPack messages that arrived split over several WebSocket messages.
+ * Class to remember deserialized BlazorPack messages so the editor can find the one a given WebSocket message
+ * belongs to.
  *
- * The proxy sees the WebSocket messages in order and can reassemble them, but the editor tab is opened later
- * against a single message, by which time the surrounding ones are no longer at hand. The reassembler stores its
- * result here, keyed by each WebSocket payload that carried part of the message, so that clicking any one of them
- * shows the whole thing.
+ * A BlazorPack message and a WebSocket message are not the same thing, and they come apart in both directions:
+ * a message can be split across several WebSocket messages, and the proxy can hand the extension a whole message
+ * while the WebSockets history still lists the pieces it arrived in. Either way the editor is opened against one
+ * piece and has to find the message it is part of.
  *
- * Payloads are keyed by digest rather than held onto, to keep the cache small regardless of message size.
+ * Lookups therefore work two ways: an exact match on a payload the reassembler saw, and failing that a search of
+ * recently deserialized messages for one that contains this payload.
  */
 public class BTPMessageCache {
 
     // Enough to cover the messages a tester is likely to click back through, without holding a session in memory
     private static final int MAX_ENTRIES = 512;
+    // Recent whole messages kept for containment lookups
+    private static final int MAX_RECENT_MESSAGES = 32;
+    // Skip containment indexing for anything implausibly large
+    private static final int MAX_INDEXED_MESSAGE_BYTES = 8 * 1024 * 1024;
 
     private final Map<String, Entry> entries = Collections.synchronizedMap(
             new LinkedHashMap<String, Entry>(16, 0.75f, true) {
@@ -45,16 +53,20 @@ public class BTPMessageCache {
                 }
             });
 
+    private final Deque<Message> recent = new ArrayDeque<>();
+
     /**
-     * Holds the deserialized form of a reassembled message
+     * Holds the deserialized form of a message, and how it relates to the WebSocket message being viewed
      */
     public static class Entry {
         private final String json;
         private final int fragmentCount;
+        private final boolean partial;
 
-        Entry(String json, int fragmentCount) {
+        Entry(String json, int fragmentCount, boolean partial) {
             this.json = json;
             this.fragmentCount = fragmentCount;
+            this.partial = partial;
         }
 
         /**
@@ -65,10 +77,32 @@ public class BTPMessageCache {
         }
 
         /**
-         * @return how many WebSocket messages the message was split across
+         * @return how many WebSocket messages the message was split across, or 0 if that is not known
          */
         public int fragmentCount() {
             return this.fragmentCount;
+        }
+
+        /**
+         * @return true if the viewed WebSocket message is only a part of this message
+         */
+        public boolean partial() {
+            return this.partial;
+        }
+    }
+
+    /**
+     * Holds a whole deserialized message for containment lookups
+     */
+    private static class Message {
+        private final byte[] bytes;
+        private final String json;
+        private final int fragmentCount;
+
+        Message(byte[] bytes, String json, int fragmentCount) {
+            this.bytes = bytes;
+            this.json = json;
+            this.fragmentCount = fragmentCount;
         }
     }
 
@@ -83,17 +117,83 @@ public class BTPMessageCache {
         if (key == null) {
             return;
         }
-        this.entries.put(key, new Entry(json, fragmentCount));
+        this.entries.put(key, new Entry(json, fragmentCount, true));
     }
 
     /**
-     * Looks up the deserialized message that a given payload formed part of
-     * @param payload - the raw bytes of a single proxied WebSocket message
-     * @return the cached entry, or null if this payload is not part of a reassembled message
+     * Records a whole deserialized message, so that any WebSocket message displaying part of it can find it
+     * @param message - the complete BlazorPack message bytes, length prefix included
+     * @param json - the JSON representation of the message
+     * @param fragmentCount - how many WebSocket messages it was reassembled from, or 1 if it arrived whole
      */
-    public Entry get(byte[] payload) {
+    public void putMessage(byte[] message, String json, int fragmentCount) {
+        if (message == null || message.length == 0 || message.length > MAX_INDEXED_MESSAGE_BYTES) {
+            return;
+        }
+        synchronized (this.recent) {
+            this.recent.addFirst(new Message(message, json, fragmentCount));
+            while (this.recent.size() > MAX_RECENT_MESSAGES) {
+                this.recent.removeLast();
+            }
+        }
+    }
+
+    /**
+     * Finds the deserialized message that a given WebSocket payload belongs to
+     * @param payload - the raw bytes of a single proxied WebSocket message
+     * @return the matching entry, or null if this payload is not part of any message we deserialized
+     */
+    public Entry resolve(byte[] payload) {
+        if (payload == null || payload.length == 0) {
+            return null;
+        }
         String key = digest(payload);
-        return key == null ? null : this.entries.get(key);
+        if (key != null) {
+            Entry exact = this.entries.get(key);
+            if (exact != null) {
+                return exact;
+            }
+        }
+        Message[] snapshot;
+        synchronized (this.recent) {
+            snapshot = this.recent.toArray(new Message[0]);
+        }
+        for (Message message : snapshot) {
+            if (message.bytes.length == payload.length) {
+                continue; // The editor deserializes a whole message directly, so it never needs looking up
+            }
+            if (contains(message.bytes, payload)) {
+                return new Entry(message.json, message.fragmentCount, true);
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Checks whether a message contains a payload verbatim
+     * @param haystack - the complete message bytes
+     * @param needle - the payload to look for
+     * @return true if the payload appears within the message
+     */
+    private static boolean contains(byte[] haystack, byte[] needle) {
+        if (needle.length > haystack.length) {
+            return false;
+        }
+        byte first = needle[0];
+        int last = haystack.length - needle.length;
+        outer:
+        for (int i = 0; i <= last; i++) {
+            if (haystack[i] != first) {
+                continue;
+            }
+            for (int j = 1; j < needle.length; j++) {
+                if (haystack[i + j] != needle[j]) {
+                    continue outer;
+                }
+            }
+            return true;
+        }
+        return false;
     }
 
     /**

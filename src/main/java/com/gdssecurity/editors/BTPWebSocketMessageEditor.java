@@ -118,10 +118,12 @@ public class BTPWebSocketMessageEditor implements ExtensionProvidedWebSocketMess
         this.readOnlyView = true;
 
         // Otherwise it may be part of a message spanning several websocket messages, which the proxy reassembles
-        BTPMessageCache.Entry entry = this.messageCache.get(payload);
+        BTPMessageCache.Entry entry = this.messageCache.resolve(payload);
         if (entry != null) {
-            this.editor.setContents(ByteArray.byteArray(
-                    describe(String.format(BTPConstants.REASSEMBLED_NOTE, entry.fragmentCount()), new JSONArray(entry.json()))));
+            String note = entry.fragmentCount() > 1
+                    ? String.format(BTPConstants.REASSEMBLED_NOTE, entry.fragmentCount())
+                    : BTPConstants.PARTIAL_NOTE;
+            this.editor.setContents(ByteArray.byteArray(describe(note, new JSONArray(entry.json()))));
             return;
         }
 
@@ -188,13 +190,13 @@ public class BTPWebSocketMessageEditor implements ExtensionProvidedWebSocketMess
         if (webSocketMessage == null || webSocketMessage.payload() == null || webSocketMessage.payload().length() == 0) {
             return false;
         }
+        byte[] payload = webSocketMessage.payload().getBytes();
         if (webSocketMessage.upgradeRequest() == null || webSocketMessage.upgradeRequest().url() == null) {
-            return false;
+            // Without the upgrade request there is no way to tell this is a Blazor connection, so fall back to
+            // what the payload itself says rather than offering the tab on every websocket in Burp
+            return this.blazorHelper.isBlazorPack(payload) || this.messageCache.resolve(payload) != null;
         }
         if (!webSocketMessage.upgradeRequest().url().contains(BTPConstants.BLAZOR_WS_URL)) {
-            return false;
-        }
-        if (!this._montoya.scope().isInScope(webSocketMessage.upgradeRequest().url())) {
             return false;
         }
         // Any message on a Blazor websocket gets the tab. A message that cannot be deserialized on its own is

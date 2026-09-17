@@ -60,6 +60,9 @@ public final class BTPConstants {
     public static final String REASSEMBLED_MESSAGES_KEY = "Messages";
     public static final String REASSEMBLED_NOTE =
             "Read-only: this BlazorPack message arrived split across %d websocket messages, so edits here cannot be written back to a single one.";
+    public static final String PARTIAL_NOTE =
+            "Read-only: this websocket message carries part of a larger BlazorPack message, shown here in full. "
+            + "Edits cannot be written back to one piece of it.";
     public static final String HANDSHAKE_NOTE =
             "SignalR handshake record, not a BlazorPack message. Nothing to deserialize.";
     public static final String UNDECODABLE_NOTE =
