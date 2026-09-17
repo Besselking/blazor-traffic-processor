@@ -17,6 +17,7 @@ package com.gdssecurity.MessageModel;
 
 import burp.api.montoya.MontoyaApi;
 import com.gdssecurity.helpers.BTPConstants;
+import com.gdssecurity.helpers.RenderBatchHelper;
 import com.gdssecurity.helpers.VarIntHelper;
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -235,7 +236,18 @@ public class InvocationMessage extends GenericMessage {
                     for (byte b : bytes) {
                         hex.append(String.format(BTPConstants.HEX_FORMAT, b));
                     }
-                    args.put(new JSONObject("{\"BinaryHeader\":" + binHeader + ",\"BinaryBytes\":\"" + hex + "\"}"));
+                    JSONObject binaryArg = new JSONObject("{\"BinaryHeader\":" + binHeader + ",\"BinaryBytes\":\"" + hex + "\"}");
+                    // JS.RenderBatch carries the page delta as a custom binary blob rather than as BlazorPack.
+                    // Decode it for readability; BinaryBytes stays authoritative, and is what gets re-serialized.
+                    if (BTPConstants.RENDER_BATCH_TARGET.equals(method)) {
+                        JSONObject renderBatch = RenderBatchHelper.decode(bytes);
+                        if (renderBatch != null) {
+                            binaryArg.put(BTPConstants.RENDER_BATCH_KEY, renderBatch);
+                        } else {
+                            this.logging.logToOutput("[*] initJsonFromMessage: unable to decode the JS.RenderBatch payload, leaving it as raw bytes.");
+                        }
+                    }
+                    args.put(binaryArg);
                     break;
                 default:
                     this.logging.logToOutput("[*] initJsonFromMessage: parsing arguments, unhandled type = " + nextTokenType);

@@ -41,6 +41,7 @@ Common to both:
 * The "BTP" request/response editor tab, which appears on each in-scope request or response that contains BlazorPack messages. 
   * Clicking on this tab will convert the serialized data from BlazorPack to JSON.
   * After editing the JSON (either in Intercept or Repeater), click the "Raw" tab to re-serialize with your payloads
+* Page deltas (`JS.RenderBatch`) are decoded automatically. See [Render Batches](#render-batches-page-deltas) below.
 * The "BTP" Burpsuite tab, which allows for ad-hoc conversions of Blazor->JSON and JSON->Blazor
   * The left-hand editor is for your input (JSON or raw Blazor)
   * The right-hand editor is for the results of the conversion
@@ -49,6 +50,53 @@ Common to both:
 * Right-click menu option called "Send body to BTP tab"
   * You can right-click any request, response, or WebSocket message and select "Extensions" -> "BlazorTrafficProcessor" -> "Send body to BTP tab"
   * This sends the selected request/response body or WebSocket frame payload to the BTP tab, so you don't have to worry about copying/pasting raw bytes
+
+## Render Batches (Page Deltas)
+Blazor Server pushes UI updates to the browser as `JS.RenderBatch` invocations. The batch itself is **not** BlazorPack:
+it is a separate custom binary format produced by [`RenderBatchWriter`](https://github.com/dotnet/aspnetcore/blob/main/src/Components/Shared/src/RenderBatchWriter.cs)
+and read by `blazor.server.js`. BTP used to surface it as an opaque wall of hex.
+
+BTP now decodes it, adding a `RenderBatch` object next to the raw bytes:
+
+```json
+[{
+  "Target": "JS.RenderBatch",
+  "MessageType": 1,
+  "Headers": 0,
+  "Arguments": [3, {
+    "BinaryHeader": 4767,
+    "BinaryBytes": "0500000001000000...",
+    "RenderBatch": {
+      "UpdatedComponents": [
+        {"ComponentId": 5, "Edits": [{"Type": "PrependFrame", "SiblingIndex": 0, "ReferenceFrameIndex": 0}]}
+      ],
+      "ReferenceFrames": [
+        {"Index": 0, "FrameType": "Element", "SubtreeLength": 9, "ElementName": "div"},
+        {"Index": 1, "FrameType": "Attribute", "AttributeName": "class", "AttributeValue": "container", "AttributeEventHandlerId": 0},
+        {"Index": 2, "FrameType": "Text", "TextContent": "Even geduld, de applicatie wordt geladen..."}
+      ],
+      "DisposedComponentIds": [],
+      "DisposedEventHandlerIds": []
+    }
+  }]
+}]
+```
+
+* `UpdatedComponents` are the diffs: per component, the list of edits to apply. `ReferenceFrameIndex` points into
+  `ReferenceFrames`, which is why each frame is tagged with its `Index`.
+* `PermutationListEntry` edits report `MoveToSiblingIndex` instead of `ReferenceFrameIndex`, because those two share
+  a slot in the wire format.
+* `AttributeEventHandlerId` is the handler id you can reuse in a `DispatchEventAsync` invocation.
+* Frame types the client never receives (`ComponentReferenceCapture`, `ComponentRenderMode`, `NamedEvent`) are written
+  as padding, so they appear with a frame type and nothing else. They still occupy an index.
+
+**`RenderBatch` is a decoded view, not an editable one.** `BinaryBytes` stays authoritative: re-serialization reads
+`BinaryHeader`/`BinaryBytes` and ignores `RenderBatch`, so a message round-trips byte-for-byte. To tamper with a batch,
+edit `BinaryBytes`.
+
+If a batch cannot be decoded (a truncated capture, or a future format change) the `RenderBatch` key is simply omitted
+and a note is written to the extension's output log; the raw bytes are always left intact. Note that the decoder reads
+the UTF-8 string table, which is what Blazor Server emits; the newer opt-in UTF-16 string table is not decoded.
 
 ## Downgrade Explained (WS -> HTTP) (legacy)
 _This is no longer the default. BTP now handles BlazorPack over WebSockets natively; the downgrade is kept as an opt-in for workflows that rely on the HTTP tooling (Repeater, Intruder, and the request/response editors)._

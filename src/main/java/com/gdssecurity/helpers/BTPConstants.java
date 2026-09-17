@@ -50,6 +50,10 @@ public final class BTPConstants {
     public static final String TRANSPORT_STR = "[{'transport':'ServerSentEvents','transferFormats':['Text']},{'transport':'LongPolling','transferFormats':['Text','Binary']}]";
     public static final JSONArray DOWNGRADED_TRANSPORTS = new JSONArray(TRANSPORT_STR);
 
+    // RenderBatch (page delta) Constants
+    public static final String RENDER_BATCH_TARGET = "JS.RenderBatch";
+    public static final String RENDER_BATCH_KEY = "RenderBatch";
+
     // HubProtocol Constants
     public static final int INVOCATION = 1;
     public static final int STREAMITEM = 2;
