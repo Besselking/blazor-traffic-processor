@@ -32,6 +32,7 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.awt.Component;
+import java.nio.charset.StandardCharsets;
 
 /**
  * Class to implement the "BTP" editor tab for proxied WebSocket messages.
@@ -45,8 +46,8 @@ public class BTPWebSocketMessageEditor implements ExtensionProvidedWebSocketMess
     private final WebSocketMessageEditor editor;
     private final BTPMessageCache messageCache;
     private WebSocketMessage message;
-    // Set when the displayed JSON came from reassembly, i.e. it describes more than just this websocket message
-    private boolean reassembled;
+    // Set when the displayed content is not a re-serializable view of exactly this websocket message
+    private boolean readOnlyView;
 
     /**
      * Constructs a new BTPWebSocketMessageEditor object
@@ -71,8 +72,9 @@ public class BTPWebSocketMessageEditor implements ExtensionProvidedWebSocketMess
      */
     @Override
     public ByteArray getMessage() {
-        if (this.reassembled || !this.editor.isModified()) {
-            // A reassembled view spans several websocket messages, so it cannot be written back to this one
+        if (this.readOnlyView || !this.editor.isModified()) {
+            // A reassembled or undecoded view does not correspond to this one websocket message, so it is
+            // never written back
             return this.message == null ? ByteArray.byteArray(new byte[0]) : this.message.payload();
         }
         ByteArray contents = this.editor.getContents();
@@ -103,29 +105,77 @@ public class BTPWebSocketMessageEditor implements ExtensionProvidedWebSocketMess
     @Override
     public void setMessage(WebSocketMessage webSocketMessage) {
         this.message = webSocketMessage;
-        this.reassembled = false;
+        this.readOnlyView = false;
         byte[] payload = webSocketMessage.payload().getBytes();
 
+        // The common case: the message stands on its own and is editable
         String json = this.blazorHelper.blazorUnpackToJsonString(payload);
         if (json != null) {
             this.editor.setContents(ByteArray.byteArray(json));
             return;
         }
 
-        // The message does not stand on its own, so it is probably part of one that spans several
-        // websocket messages. The proxy reassembles those, so look for the completed message here.
+        this.readOnlyView = true;
+
+        // Otherwise it may be part of a message spanning several websocket messages, which the proxy reassembles
         BTPMessageCache.Entry entry = this.messageCache.get(payload);
         if (entry != null) {
-            this.reassembled = true;
-            JSONObject wrapper = new JSONObject();
-            wrapper.put(BTPConstants.REASSEMBLED_NOTE_KEY, String.format(BTPConstants.REASSEMBLED_NOTE, entry.fragmentCount()));
-            wrapper.put(BTPConstants.REASSEMBLED_MESSAGES_KEY, new JSONArray(entry.json()));
-            this.editor.setContents(ByteArray.byteArray(wrapper.toString(3)));
+            this.editor.setContents(ByteArray.byteArray(
+                    describe(String.format(BTPConstants.REASSEMBLED_NOTE, entry.fragmentCount()), new JSONArray(entry.json()))));
             return;
         }
 
+        // The first message of each direction is the SignalR handshake, which is not BlazorPack at all
+        if (isHandshake(payload)) {
+            this.editor.setContents(ByteArray.byteArray(
+                    describe(BTPConstants.HANDSHAKE_NOTE, new String(payload, StandardCharsets.UTF_8).trim())));
+            return;
+        }
+
+        // Say so rather than showing nothing, so a message BTP cannot make sense of is still explained
         this.logging.logToError("[-] setMessage - Unable to deserialize the selected websocket message.");
-        this.editor.setContents(webSocketMessage.payload());
+        this.editor.setContents(ByteArray.byteArray(describe(BTPConstants.UNDECODABLE_NOTE, toHex(payload))));
+    }
+
+    /**
+     * Wraps content that is not a plain editable message with a note explaining what it is
+     * @param note - the explanation to show
+     * @param content - the content to show beneath it
+     * @return the JSON text to display
+     */
+    private static String describe(String note, Object content) {
+        JSONObject wrapper = new JSONObject();
+        wrapper.put(BTPConstants.REASSEMBLED_NOTE_KEY, note);
+        if (content instanceof JSONArray) {
+            wrapper.put(BTPConstants.REASSEMBLED_MESSAGES_KEY, content);
+        } else {
+            wrapper.put(BTPConstants.RAW_BYTES_KEY, content);
+        }
+        return wrapper.toString(3);
+    }
+
+    /**
+     * Checks whether a payload is a SignalR handshake record rather than a BlazorPack message
+     * @param payload - the websocket message payload
+     * @return true if it looks like a handshake
+     */
+    private static boolean isHandshake(byte[] payload) {
+        return payload.length > 1
+                && (payload[0] & 0xFF) == '{'
+                && payload[payload.length - 1] == BTPConstants.RECORD_SEPARATOR;
+    }
+
+    /**
+     * Renders a payload as a hex string
+     * @param payload - the bytes to render
+     * @return the hex representation
+     */
+    private static String toHex(byte[] payload) {
+        StringBuilder hex = new StringBuilder();
+        for (byte b : payload) {
+            hex.append(String.format(BTPConstants.HEX_FORMAT, b));
+        }
+        return hex.toString();
     }
 
     /**
@@ -147,9 +197,9 @@ public class BTPWebSocketMessageEditor implements ExtensionProvidedWebSocketMess
         if (!this._montoya.scope().isInScope(webSocketMessage.upgradeRequest().url())) {
             return false;
         }
-        byte[] payload = webSocketMessage.payload().getBytes();
-        // Either the message stands on its own, or it is part of one the proxy reassembled
-        return this.blazorHelper.isBlazorPack(payload) || this.messageCache.get(payload) != null;
+        // Any message on a Blazor websocket gets the tab. A message that cannot be deserialized on its own is
+        // usually part of one split across several, and silently hiding the tab makes that look like a bug.
+        return true;
     }
 
     /**

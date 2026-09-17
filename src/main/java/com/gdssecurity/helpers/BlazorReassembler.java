@@ -28,6 +28,10 @@ import java.util.List;
  * prefix. Treat one direction of one connection as a byte stream, buffer it, and hand back whole messages
  * as their last byte arrives.
  *
+ * The first message in each direction is the SignalR handshake, which is a JSON record terminated by 0x1E rather
+ * than a length-prefixed BlazorPack message. It has to be consumed as such: its leading '{' would otherwise be read
+ * as a length prefix and throw the rest of the stream out of alignment.
+ *
  * Instances are per connection and per direction, and are safe to call from Burp's proxy threads.
  */
 public class BlazorReassembler {
@@ -36,9 +40,16 @@ public class BlazorReassembler {
     private static final int MAX_BUFFERED_BYTES = 32 * 1024 * 1024;
     // A VarInt length prefix is at most 5 bytes for a 32-bit value
     private static final int MAX_VARINT_BYTES = 5;
+    // The SignalR handshake is a JSON record closed by this separator
+    private static final byte RECORD_SEPARATOR = 0x1E;
+    private static final int OPENING_BRACE = 0x7B;
+    // No handshake record is anywhere near this long, so past it we are looking at something else
+    private static final int MAX_HANDSHAKE_BYTES = 4096;
 
     private byte[] buffer = new byte[0];
     private final List<byte[]> pendingFragments = new ArrayList<>();
+    // The handshake is only ever the first record of a direction
+    private boolean expectHandshake = true;
 
     /**
      * Holds one fully reassembled BlazorPack message along with the WebSocket payloads it was built from
@@ -95,6 +106,22 @@ public class BlazorReassembler {
 
         int consumed = 0;
         while (true) {
+            if (this.expectHandshake) {
+                int handshakeLength = handshakeLength(this.buffer, consumed);
+                if (handshakeLength == -1) {
+                    break; // The handshake record has not arrived in full yet
+                }
+                if (handshakeLength > 0) {
+                    // Drop the handshake: it is not BlazorPack and has nothing to deserialize
+                    consumed += handshakeLength;
+                    this.expectHandshake = false;
+                    this.pendingFragments.clear();
+                    this.pendingFragments.add(payload);
+                    continue;
+                }
+                this.expectHandshake = false; // Not a handshake, so treat it as a normal message
+            }
+
             long prefix = readVarInt(this.buffer, consumed);
             if (prefix == -1) {
                 break; // The length prefix itself is not complete yet
@@ -103,6 +130,12 @@ public class BlazorReassembler {
             int messageLength = (int) prefix;
             if (messageLength < 0 || messageLength > MAX_BUFFERED_BYTES) {
                 reset(); // Not a BlazorPack stream, or we lost sync with it
+                return completed;
+            }
+            if (!isPlausibleBody(this.buffer, consumed + prefixLength)) {
+                // Every BlazorPack message is a MessagePack array. Anything else means the stream is no longer
+                // aligned, and walking on would emit nonsense, so drop what is buffered and start over.
+                reset();
                 return completed;
             }
             int totalLength = prefixLength + messageLength;
@@ -145,6 +178,47 @@ public class BlazorReassembler {
     public synchronized void reset() {
         this.buffer = new byte[0];
         this.pendingFragments.clear();
+    }
+
+    /**
+     * Measures a leading SignalR handshake record, if that is what the buffer starts with
+     * @param data - the buffer to inspect
+     * @param offset - the offset to inspect at
+     * @return the record length including its separator, 0 if this is not a handshake, or -1 if more bytes are needed
+     */
+    private static int handshakeLength(byte[] data, int offset) {
+        if (offset >= data.length) {
+            return -1;
+        }
+        if ((data[offset] & 0xFF) != OPENING_BRACE) {
+            return 0;
+        }
+        // A 123-byte BlazorPack message also starts with 0x7B, so let the byte after it decide: a real message
+        // body opens with a MessagePack array header, a handshake with JSON
+        if (offset + 1 < data.length && isPlausibleBody(data, offset + 1)) {
+            return 0;
+        }
+        for (int i = offset; i < data.length && i - offset < MAX_HANDSHAKE_BYTES; i++) {
+            if (data[i] == RECORD_SEPARATOR) {
+                return (i - offset) + 1;
+            }
+        }
+        return data.length - offset >= MAX_HANDSHAKE_BYTES ? 0 : -1;
+    }
+
+    /**
+     * Checks whether a message body starts the way a BlazorPack message must, with a MessagePack array header
+     * @param data - the buffer to inspect
+     * @param offset - the offset the body starts at
+     * @return true if the body is plausible, or if there are not yet enough bytes to tell
+     */
+    private static boolean isPlausibleBody(byte[] data, int offset) {
+        if (offset >= data.length) {
+            return true; // Not enough bytes to judge; the caller waits for more
+        }
+        int header = data[offset] & 0xFF;
+        // fixarray with at least one element, or the 16/32-bit array headers
+        return (header >= 0x91 && header <= 0x9F) || header == 0xDC || header == 0xDD;
     }
 
     /**

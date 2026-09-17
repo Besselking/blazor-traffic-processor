@@ -115,13 +115,23 @@ byte arrives. Clicking any of the WebSocket messages that carried a split messag
 }
 ```
 
+The first message in each direction is the SignalR handshake (`{"protocol":"blazorpack","version":1}` followed by a
+`0x1E` record separator), which is not a length-prefixed BlazorPack message. BTP consumes it as its own record - read
+as a length prefix, its leading `{` would mean "expect 123 more bytes" and throw the rest of the stream out of
+alignment.
+
 Worth knowing:
+* **Every message on a Blazor WebSocket gets a BTP tab**, including ones BTP cannot deserialize. Rather than hiding
+  the tab, it explains what the message is: a handshake record, a piece of a message BTP never saw in full, or bytes
+  it could not make sense of. A missing tab means the connection is out of scope or is not a Blazor WebSocket.
 * **Reassembled views are read-only.** The decoded message spans several WebSocket messages, so there is no single one
   to write edits back to. BTP returns the original bytes untouched and ignores edits made in this view. Messages that
   arrive whole are unaffected and stay editable.
 * **Reassembly happens as traffic passes through the proxy.** Messages proxied before the extension was loaded were
   never streamed through it, so they cannot be reassembled after the fact.
-* A stream that desynchronises, or that turns out not to be BlazorPack, is dropped rather than buffered indefinitely.
+* A stream that loses alignment is detected (every BlazorPack message is a MessagePack array, so a body that does not
+  start with an array header means the stream is no longer aligned) and reset, rather than emitting nonsense or
+  buffering indefinitely.
 
 ## Downgrade Explained (WS -> HTTP) (legacy)
 _This is no longer the default. BTP now handles BlazorPack over WebSockets natively; the downgrade is kept as an opt-in for workflows that rely on the HTTP tooling (Repeater, Intruder, and the request/response editors)._

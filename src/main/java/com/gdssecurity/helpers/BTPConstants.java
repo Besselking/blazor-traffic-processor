@@ -55,6 +55,14 @@ public final class BTPConstants {
     public static final String REASSEMBLED_MESSAGES_KEY = "Messages";
     public static final String REASSEMBLED_NOTE =
             "Read-only: this BlazorPack message arrived split across %d websocket messages, so edits here cannot be written back to a single one.";
+    public static final String HANDSHAKE_NOTE =
+            "SignalR handshake record, not a BlazorPack message. Nothing to deserialize.";
+    public static final String UNDECODABLE_NOTE =
+            "BTP could not deserialize this websocket message. It is most likely part of a message split across "
+            + "several websocket messages that BTP did not see in full - reassembly only covers traffic proxied "
+            + "while the extension was loaded, so reload the page and try again. The raw bytes are shown unchanged.";
+    public static final String RAW_BYTES_KEY = "RawBytes";
+    public static final byte RECORD_SEPARATOR = 0x1E;
 
     // RenderBatch (page delta) Constants
     public static final String RENDER_BATCH_TARGET = "JS.RenderBatch";
