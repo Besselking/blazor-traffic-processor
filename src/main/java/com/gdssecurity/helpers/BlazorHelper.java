@@ -197,12 +197,12 @@ public class BlazorHelper {
         if (blob == null || blob.length == 0) {
             return null;
         }
-        if (!BlazorReassembler.looksLikeCompleteMessages(blob)) {
-            // Not framed as BlazorPack, so skip the parse rather than logging an error for every stray byte.
-            // A websocket message carrying the middle of a larger message lands here on every click.
-            return null;
-        }
         try {
+            if (!BlazorReassembler.looksLikeCompleteMessages(blob)) {
+                // Not framed as BlazorPack, so skip the parse rather than logging an error for every stray byte.
+                // A websocket message carrying the middle of a larger message lands here on every click.
+                return null;
+            }
             ArrayList<GenericMessage> messages = blazorUnpack(blob);
             if (messages == null || messages.isEmpty() || messages.contains(null)) {
                 return null;

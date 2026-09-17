@@ -243,13 +243,16 @@ public class BlazorReassembler {
             if (messageLength <= 0 || prefixLength > MAX_VARINT_BYTES) {
                 return false;
             }
+            // Compare against the bytes left rather than advancing first: a length near Integer.MAX_VALUE
+            // overflows the addition, and a negative offset then reads outside the array
+            int remaining = payload.length - offset - prefixLength;
+            if (remaining < 0 || messageLength > remaining) {
+                return false; // Runs past the end, so this is not a self-contained payload
+            }
             if (!isPlausibleBody(payload, offset + prefixLength)) {
                 return false;
             }
             offset += prefixLength + messageLength;
-            if (offset > payload.length) {
-                return false; // Runs past the end, so this is not a self-contained payload
-            }
             messages++;
         }
         return messages > 0;

@@ -128,6 +128,13 @@ public class BTPWebSocketMessageEditor implements ExtensionProvidedWebSocketMess
             return;
         }
 
+        // The first message of each direction is the SignalR handshake, which is not BlazorPack at all
+        if (isHandshake(payload)) {
+            this.editor.setContents(ByteArray.byteArray(
+                    describe(BTPConstants.HANDSHAKE_NOTE, new String(payload, StandardCharsets.UTF_8).trim())));
+            return;
+        }
+
         // Burp does not pass every piece of a fragmented message to the proxy handler, so the live stream can
         // be missing the rest of this one. The WebSockets history does have them, so rebuild it from there.
         BTPHistoryAssembler.Result rebuilt = BTPHistoryAssembler.rebuild(this._montoya, this.blazorHelper, webSocketMessage);
@@ -139,13 +146,6 @@ public class BTPWebSocketMessageEditor implements ExtensionProvidedWebSocketMess
                     ? String.format(BTPConstants.REASSEMBLED_NOTE, rebuilt.fragmentCount())
                     : BTPConstants.PARTIAL_NOTE;
             this.editor.setContents(ByteArray.byteArray(describe(note, new JSONArray(rebuilt.json()))));
-            return;
-        }
-
-        // The first message of each direction is the SignalR handshake, which is not BlazorPack at all
-        if (isHandshake(payload)) {
-            this.editor.setContents(ByteArray.byteArray(
-                    describe(BTPConstants.HANDSHAKE_NOTE, new String(payload, StandardCharsets.UTF_8).trim())));
             return;
         }
 

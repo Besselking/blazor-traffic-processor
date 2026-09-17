@@ -106,14 +106,14 @@ public final class BTPHistoryAssembler {
                     continue;
                 }
                 stream.add(entry.payload().getBytes());
-                if (stream.size() > MAX_HISTORY_ENTRIES) {
-                    stream.remove(0); // Keep the most recent window
-                }
             } catch (Exception e) {
                 // A history entry that cannot be read is simply skipped
             }
         }
-        return stream;
+        // Keep the most recent window, trimmed once rather than shifting the list per entry
+        return stream.size() > MAX_HISTORY_ENTRIES
+                ? new ArrayList<>(stream.subList(stream.size() - MAX_HISTORY_ENTRIES, stream.size()))
+                : stream;
     }
 
     /**
