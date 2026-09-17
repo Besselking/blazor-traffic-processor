@@ -25,9 +25,18 @@ A BurpSuite extension to aid pentesting web applications that use Blazor Server/
   2. Under "Extensions", click "Add"
   3. In the file selector, choose the downloaded/built `.jar` file
 
-**NOTE: it is recommended to check "Other Binary" in your Burp History filter, this will allow you to see data returned by the application.**
+**NOTE: when using the legacy LongPolling downgrade, it is recommended to check "Other Binary" in your Burp History filter, this will allow you to see data returned by the application.**
 
 ### Using the Extension
+BTP works against both transports Blazor Server can use:
+
+* **WebSockets (default).** Blazor's preferred transport is left alone, and BTP reads the BlazorPack frames directly off the proxied WebSocket.
+  * BlazorPack frames are highlighted as Cyan in the "WebSockets history" tab.
+  * The "BTP" tab appears on each in-scope WebSocket message that contains BlazorPack data, in the WebSockets history and in Intercept.
+  * Editing the JSON in that tab re-serializes it back to BlazorPack when the frame is forwarded.
+* **LongPolling over HTTP (legacy, opt-in).** Enable the "Force LongPolling downgrade (WebSockets -> HTTP)" checkbox in the BTP suite tab to have BTP rewrite the Blazor negotiate response, as older versions of the extension always did. See [Downgrade Explained](#downgrade-explained-ws---http-legacy) below.
+
+Common to both:
 * All BlazorPack-enabled requests or responses will be highlighted as Cyan within the "Http History" tab in Burpsuite.
 * The "BTP" request/response editor tab, which appears on each in-scope request or response that contains BlazorPack messages. 
   * Clicking on this tab will convert the serialized data from BlazorPack to JSON.
@@ -38,10 +47,12 @@ A BurpSuite extension to aid pentesting web applications that use Blazor Server/
   * A drop-down menu on the bottom of the window lets you select "Blazor->JSON" or "JSON->Blazor"
   * The Serialize/Deserialize button at the top is how you trigger the conversion
 * Right-click menu option called "Send body to BTP tab"
-  * You can right-click any request or response and select "Extensions" -> "BlazorTrafficProcessor" -> "Send body to BTP tab"
-  * This sends either the selected request or response body to the BTP tab, so you don't have to worry about copying/pasting raw bytes
+  * You can right-click any request, response, or WebSocket message and select "Extensions" -> "BlazorTrafficProcessor" -> "Send body to BTP tab"
+  * This sends the selected request/response body or WebSocket frame payload to the BTP tab, so you don't have to worry about copying/pasting raw bytes
 
-## Downgrade Explained (WS -> HTTP)
+## Downgrade Explained (WS -> HTTP) (legacy)
+_This is no longer the default. BTP now handles BlazorPack over WebSockets natively; the downgrade is kept as an opt-in for workflows that rely on the HTTP tooling (Repeater, Intruder, and the request/response editors)._
+
 Blazor server normally communicates via WebSockets, though it supports other protocols such as LongPolling over HTTP.
 During the connection initiation between your browser and the server, one of the first requests sent will look like the following:
 ```http
@@ -73,11 +84,11 @@ Server: Kestrel
 }
 ```
 
-This negotiation determines how the client and server will establish their connection. WebSockets is the preferred method but Burp previously didn't have the best support for WS extensions**, so we need to force the connection over HTTP in order to use the extension.
-Therefore, the browser (and JavaScript running in it) that you're proxying traffic through will see that websockets aren't supported and fall back to using HTTP ("LongPolling").
-BTP will automatically perform this downgrade, observable via the Original/Modified versions of the Blazor negotiation HTTP response.
+This negotiation determines how the client and server will establish their connection. WebSockets is the preferred method, but earlier releases of Burp's Montoya API had no way to add a custom tab to a WebSocket message, so BTP forced the connection over HTTP in order to be useful.
+With the downgrade enabled, the browser (and JavaScript running in it) that you're proxying traffic through will see that websockets aren't supported and fall back to using HTTP ("LongPolling").
+BTP performs this downgrade when the checkbox in the BTP suite tab is ticked, observable via the Original/Modified versions of the Blazor negotiation HTTP response. The setting is remembered across Burp restarts.
 
-** Note: Support for BlazorPack over WS is currently under development as there are newer iterations of Burp's Montoya APIs being released frequently with improved WS functionality.
+The Montoya API now exposes WebSocket creation handlers, full read/modify/drop interception of proxied frames, and extension-provided WebSocket message editors, so the downgrade is no longer needed to read or tamper with BlazorPack. It is left in place because Repeater and Intruder workflows are still richer over HTTP than over WebSockets.
 
 ## Example Requests
 

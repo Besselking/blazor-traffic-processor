@@ -24,27 +24,32 @@ import burp.api.montoya.proxy.http.ProxyResponseHandler;
 import burp.api.montoya.proxy.http.ProxyResponseReceivedAction;
 import burp.api.montoya.proxy.http.ProxyResponseToBeSentAction;
 import com.gdssecurity.helpers.BTPConstants;
+import com.gdssecurity.helpers.BTPSettings;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
 /**
- * Class to handle the downgrade from WS to LongPolling (HTTP)
+ * Class to handle the optional downgrade from WS to LongPolling (HTTP)
+ * BlazorPack over WebSockets is handled natively, so the downgrade is only applied when the user opts in.
  */
 public class BTPHttpResponseHandler implements ProxyResponseHandler {
 
     private MontoyaApi _montoya;
     private Logging _logging;
     private JSONArray modifiedTransports;
+    private BTPSettings settings;
 
     /**
      * Constructor for the BTPHttpResponseHandler object
      * @param montoyaApi - an instance of the Burp Montoya APIs
+     * @param settings - the BTP settings holding whether the downgrade is enabled
      */
-    public BTPHttpResponseHandler(MontoyaApi montoyaApi) {
+    public BTPHttpResponseHandler(MontoyaApi montoyaApi, BTPSettings settings) {
         this._montoya = montoyaApi;
         this._logging = montoyaApi.logging();
         this.modifiedTransports = BTPConstants.DOWNGRADED_TRANSPORTS;
+        this.settings = settings;
     }
 
     /**
@@ -59,7 +64,10 @@ public class BTPHttpResponseHandler implements ProxyResponseHandler {
             interceptedResponse.annotations().setHighlightColor(HighlightColor.CYAN);
         }
 
-        // Handle Blazor Negotiation
+        // Handle Blazor Negotiation, only when the user has opted into the legacy downgrade
+        if (!this.settings.isDowngradeEnabled()) {
+            return ProxyResponseReceivedAction.continueWith(interceptedResponse);
+        }
         if (!interceptedResponse.initiatingRequest().url().contains(BTPConstants.NEGOTIATE_URL) || interceptedResponse.statedMimeType() != MimeType.JSON) {
             return ProxyResponseReceivedAction.continueWith(interceptedResponse);
         }

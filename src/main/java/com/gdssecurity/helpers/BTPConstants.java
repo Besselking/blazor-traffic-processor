@@ -28,14 +28,23 @@ public final class BTPConstants {
     public static final String CAPTION = "BTP";
     public static final String SEND_TO_BTP_CAPTION = "Send body to BTP tab";
     public static final String SEND_TO_INT_CAPTION = "Send to Intruder";
+    public static final String DOWNGRADE_CHECKBOX_CAPTION = "Force LongPolling downgrade (WebSockets -> HTTP)";
+    public static final String DOWNGRADE_CHECKBOX_TOOLTIP =
+            "Legacy mode. When checked, BTP rewrites the Blazor negotiate response so the browser falls back to " +
+            "LongPolling over HTTP. Leave unchecked to work with the native WebSocket connection.";
     public static final String LOADED_LOG_MSG = "[+] BTP v1.0 Extension loaded.";
     public static final String UNLOADED_LOG_MSG = "[*] BTP v1.0 Extension unloaded.";
 
     // Patterns and Regexes
     public static final String BLAZOR_URL = "_blazor?id=";
+    public static final String BLAZOR_WS_URL = "_blazor";
     public static final String NEGOTIATE_URL = "negotiate?negotiateVersion=";
     public static final Pattern BODY_OFFSET = Pattern.compile("(\r\n\r\n)");
     public static final String HEX_FORMAT = "%02X";
+
+    // Persisted Settings
+    public static final String PREF_DOWNGRADE_ENABLED = "btp.downgradeEnabled";
+    public static final boolean DEFAULT_DOWNGRADE_ENABLED = false;
 
     // Downgrade Constants (WS -> HTTP)
     public static final String TRANSPORT_STR = "[{'transport':'ServerSentEvents','transferFormats':['Text']},{'transport':'LongPolling','transferFormats':['Text','Binary']}]";
