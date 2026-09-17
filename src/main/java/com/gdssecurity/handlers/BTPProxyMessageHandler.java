@@ -125,7 +125,7 @@ public class BTPProxyMessageHandler implements ProxyMessageHandler {
             List<BlazorReassembler.AssembledMessage> assembled = reassembler.accept(payload);
             String desyncNotice = reassembler.consumeDesyncNotice();
             if (desyncNotice != null) {
-                this._logging.logToOutput("[*] process - websocket "
+                log("[*] process - websocket "
                         + (message.direction() == Direction.CLIENT_TO_SERVER ? "to server" : "to client")
                         + ": " + desyncNotice);
             }
@@ -144,7 +144,7 @@ public class BTPProxyMessageHandler implements ProxyMessageHandler {
                     for (byte[] fragment : completed.fragments()) {
                         this.messageCache.put(fragment, json, completed.fragments().size());
                     }
-                    this._logging.logToOutput("[+] process - Reassembled a BlazorPack message from "
+                    log("[+] process - Reassembled a BlazorPack message from "
                             + completed.fragments().size() + " websocket messages.");
                 }
             }
@@ -155,13 +155,27 @@ public class BTPProxyMessageHandler implements ProxyMessageHandler {
             message.annotations().setHighlightColor(HighlightColor.CYAN);
 
             if (this.settings.isVerboseLoggingEnabled()) {
-                this._logging.logToOutput(String.format(
+                log(String.format(
                         "[*] websocket %s %d bytes -> completed %d message(s), deserialized %d, %d byte(s) buffered awaiting the rest",
                         message.direction() == Direction.CLIENT_TO_SERVER ? "to server" : "to client",
                         payload.length, assembled.size(), deserialized, reassembler.pendingBytes()));
             }
         } catch (Exception e) {
-            this._logging.logToError("[-] process - An unexpected error occurred while handling a websocket message: " + e.getMessage());
+            log("[-] process - An unexpected error occurred while handling a websocket message: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Writes to the extension's output, tolerating the logger having gone away.
+     * Burp tears the logger down when the extension is unloaded, while proxy threads may still be delivering
+     * messages to handlers registered on connections that are already open.
+     * @param text - the line to log
+     */
+    private void log(String text) {
+        try {
+            this._logging.logToOutput(text);
+        } catch (Throwable ignored) {
+            // Nothing useful to do: the extension this handler belongs to is going away
         }
     }
 }

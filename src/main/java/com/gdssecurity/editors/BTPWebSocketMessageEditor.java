@@ -25,6 +25,7 @@ import burp.api.montoya.ui.editor.WebSocketMessageEditor;
 import burp.api.montoya.ui.editor.extension.EditorMode;
 import burp.api.montoya.ui.editor.extension.ExtensionProvidedWebSocketMessageEditor;
 import com.gdssecurity.helpers.BTPConstants;
+import com.gdssecurity.helpers.BTPHistoryAssembler;
 import com.gdssecurity.helpers.BTPMessageCache;
 import com.gdssecurity.helpers.BlazorHelper;
 import org.json.JSONArray;
@@ -124,6 +125,20 @@ public class BTPWebSocketMessageEditor implements ExtensionProvidedWebSocketMess
                     ? String.format(BTPConstants.REASSEMBLED_NOTE, entry.fragmentCount())
                     : BTPConstants.PARTIAL_NOTE;
             this.editor.setContents(ByteArray.byteArray(describe(note, new JSONArray(entry.json()))));
+            return;
+        }
+
+        // Burp does not pass every piece of a fragmented message to the proxy handler, so the live stream can
+        // be missing the rest of this one. The WebSockets history does have them, so rebuild it from there.
+        BTPHistoryAssembler.Result rebuilt = BTPHistoryAssembler.rebuild(this._montoya, this.blazorHelper, webSocketMessage);
+        if (rebuilt != null) {
+            for (byte[] fragment : rebuilt.fragments()) {
+                this.messageCache.put(fragment, rebuilt.json(), rebuilt.fragmentCount());
+            }
+            String note = rebuilt.fragmentCount() > 1
+                    ? String.format(BTPConstants.REASSEMBLED_NOTE, rebuilt.fragmentCount())
+                    : BTPConstants.PARTIAL_NOTE;
+            this.editor.setContents(ByteArray.byteArray(describe(note, new JSONArray(rebuilt.json()))));
             return;
         }
 

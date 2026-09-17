@@ -41,6 +41,7 @@ public class BlazorTrafficProcessor implements BurpExtension, ExtensionUnloading
     private Logging logging;
     private BTPSettings settings;
     private BTPMessageCache messageCache;
+    private BTPWebSocketCreationHandler webSocketCreationHandler;
 
     /**
      * Setup function that gets called on extension startup. Register all required handlers, providers, etc.
@@ -71,8 +72,8 @@ public class BlazorTrafficProcessor implements BurpExtension, ExtensionUnloading
         this._montoya.proxy().registerRequestHandler(highlightHandler);
 
         // WebSocket Creation Handler (attaches a BlazorPack-aware handler to each proxied Blazor websocket)
-        BTPWebSocketCreationHandler webSocketCreationHandler = new BTPWebSocketCreationHandler(this._montoya, this.messageCache, this.settings);
-        this._montoya.proxy().registerWebSocketCreationHandler(webSocketCreationHandler);
+        this.webSocketCreationHandler = new BTPWebSocketCreationHandler(this._montoya, this.messageCache, this.settings);
+        this._montoya.proxy().registerWebSocketCreationHandler(this.webSocketCreationHandler);
 
         // Setup the BTP tab in BurpSuite (main nav bar)
         BTPView burpTab = new BTPView(this._montoya, this.settings);
@@ -91,6 +92,11 @@ public class BlazorTrafficProcessor implements BurpExtension, ExtensionUnloading
      */
     @Override
     public void extensionUnloaded() {
+        // Detach the per-connection handlers, otherwise they keep running against websockets that are still open
+        // and log through a logger Burp has already torn down
+        if (this.webSocketCreationHandler != null) {
+            this.webSocketCreationHandler.deregisterAll();
+        }
         this.logging.logToOutput(BTPConstants.UNLOADED_LOG_MSG);
     }
 }

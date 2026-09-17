@@ -16,6 +16,7 @@
 package com.gdssecurity.handlers;
 
 import burp.api.montoya.MontoyaApi;
+import burp.api.montoya.core.Registration;
 import burp.api.montoya.http.message.requests.HttpRequest;
 import burp.api.montoya.logging.Logging;
 import burp.api.montoya.proxy.websocket.ProxyWebSocketCreation;
@@ -23,6 +24,10 @@ import burp.api.montoya.proxy.websocket.ProxyWebSocketCreationHandler;
 import com.gdssecurity.helpers.BTPConstants;
 import com.gdssecurity.helpers.BTPMessageCache;
 import com.gdssecurity.helpers.BTPSettings;
+
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 
 /**
  * Class to detect Blazor WebSockets as they are created through the proxy, and attach a message handler to them
@@ -33,6 +38,8 @@ public class BTPWebSocketCreationHandler implements ProxyWebSocketCreationHandle
     private final Logging _logging;
     private final BTPMessageCache messageCache;
     private final BTPSettings settings;
+    // Kept so the per-connection handlers can be detached when the extension unloads
+    private final List<Registration> registrations = Collections.synchronizedList(new ArrayList<>());
 
     /**
      * Constructor for the websocket creation handler
@@ -62,7 +69,24 @@ public class BTPWebSocketCreationHandler implements ProxyWebSocketCreationHandle
             return;
         }
         // A handler per websocket, so each connection reassembles its own stream
-        webSocketCreation.proxyWebSocket().registerProxyMessageHandler(new BTPProxyMessageHandler(this._montoya, this.messageCache, this.settings));
+        this.registrations.add(webSocketCreation.proxyWebSocket()
+                .registerProxyMessageHandler(new BTPProxyMessageHandler(this._montoya, this.messageCache, this.settings)));
         this._logging.logToOutput("[+] handleWebSocketCreation - Attached BTP handler to Blazor WebSocket: " + upgradeRequest.url());
+    }
+
+    /**
+     * Detaches every per-connection message handler this extension registered
+     */
+    public void deregisterAll() {
+        synchronized (this.registrations) {
+            for (Registration registration : this.registrations) {
+                try {
+                    registration.deregister();
+                } catch (Exception ignored) {
+                    // Already gone
+                }
+            }
+            this.registrations.clear();
+        }
     }
 }

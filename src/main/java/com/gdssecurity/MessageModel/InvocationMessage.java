@@ -244,7 +244,12 @@ public class InvocationMessage extends GenericMessage {
                         if (renderBatch != null) {
                             binaryArg.put(BTPConstants.RENDER_BATCH_KEY, renderBatch);
                         } else {
-                            this.logging.logToOutput("[*] initJsonFromMessage: unable to decode the JS.RenderBatch payload, leaving it as raw bytes.");
+                            StringBuilder preview = new StringBuilder();
+                            for (int b = 0; b < Math.min(16, bytes.length); b++) {
+                                preview.append(String.format(BTPConstants.HEX_FORMAT, bytes[b]));
+                            }
+                            this.logging.logToOutput("[*] initJsonFromMessage: unable to decode the JS.RenderBatch payload ("
+                                    + bytes.length + " bytes, starts " + preview + "), leaving it as raw bytes.");
                         }
                     }
                     args.put(binaryArg);

@@ -109,9 +109,15 @@ A BlazorPack message and a WebSocket message come apart in both directions. A me
 WebSocket messages, and Burp can hand the extension a whole message while the WebSockets history still lists the
 pieces it arrived in - in which case only the first row is annotated and the rest look like unrelated traffic.
 
-BTP handles both. It treats each direction of each connection as a byte stream, buffers it, and deserializes
-messages as their last byte arrives; every deserialized message is then indexed so that a row showing any part of
-it resolves to the whole thing. Clicking any of the WebSocket messages that carried a message shows all of it:
+Worse, Burp does not hand an extension every piece: a large render batch reaches the proxy message handler as its
+first piece only, and the rest never arrives there at all. It does all reach the WebSockets history, which is what
+you see listed, so that is where such a message has to be put back together.
+
+BTP handles all of this. It treats each direction of each connection as a byte stream, buffers it, and deserializes
+messages as their last byte arrives; every deserialized message is indexed so that a row showing any part of it
+resolves to the whole thing; and when the live stream never saw the rest, the message is rebuilt by replaying that
+connection and direction from the WebSockets history. Clicking any of the WebSocket messages that carried a message
+shows all of it:
 
 ```json
 {
